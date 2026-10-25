@@ -72,6 +72,69 @@ final class Glyphs {
                 path.close();
                 c.drawPath(path, p);
                 break;
+            case "volume": {  // speaker cone + one arc; X-mark drawn separately for mute
+                p.setStyle(Paint.Style.FILL);
+                float sh = s * 0.26f, sw = s * 0.16f;
+                path.moveTo(s * 0.22f, s * 0.38f);
+                path.lineTo(s * 0.22f + sw, s * 0.38f);
+                path.lineTo(m + s * 0.06f, s * 0.22f);
+                path.lineTo(m + s * 0.06f, s * 0.78f);
+                path.lineTo(s * 0.22f + sw, s * 0.62f);
+                path.lineTo(s * 0.22f, s * 0.62f);
+                path.close();
+                c.drawPath(path, p);
+                p.setStyle(Paint.Style.STROKE);
+                r.set(m + s * 0.06f, s * 0.5f - sh, m + s * 0.06f + sh, s * 0.5f + sh);
+                c.drawArc(r, -60, 120, false, p);
+                break;
+            }
+            case "mute": {  // same speaker + X across the cone
+                p.setStyle(Paint.Style.FILL);
+                float sw2 = s * 0.16f;
+                path.moveTo(s * 0.22f, s * 0.38f);
+                path.lineTo(s * 0.22f + sw2, s * 0.38f);
+                path.lineTo(m + s * 0.06f, s * 0.22f);
+                path.lineTo(m + s * 0.06f, s * 0.78f);
+                path.lineTo(s * 0.22f + sw2, s * 0.62f);
+                path.lineTo(s * 0.22f, s * 0.62f);
+                path.close();
+                c.drawPath(path, p);
+                p.setStyle(Paint.Style.STROKE);
+                c.drawLine(s * 0.64f, s * 0.36f, s * 0.82f, s * 0.64f, p);
+                c.drawLine(s * 0.82f, s * 0.36f, s * 0.64f, s * 0.64f, p);
+                break;
+            }
+            case "bluetooth": {  // stylised B-path
+                p.setStyle(Paint.Style.STROKE);
+                path.moveTo(m - s * 0.14f, s * 0.26f);
+                path.lineTo(m + s * 0.14f, s * 0.5f);
+                path.lineTo(m - s * 0.14f, s * 0.74f);
+                path.moveTo(m - s * 0.14f, s * 0.5f);
+                path.lineTo(m + s * 0.14f, s * 0.5f);
+                path.moveTo(m - s * 0.14f, s * 0.74f);
+                path.lineTo(m + s * 0.14f, s * 0.26f);
+                path.lineTo(m - s * 0.14f, s * 0.26f);
+                c.drawPath(path, p);
+                break;
+            }
+            case "airplay": {  // screen with upward arrow + two wifi-like arcs
+                p.setStyle(Paint.Style.STROKE);
+                float ay = s * 0.64f, aw = s * 0.52f, ah = s * 0.28f;
+                r.set(m - aw / 2, ay - ah, m + aw / 2, ay);
+                c.drawRoundRect(r, s * 0.06f, s * 0.06f, p);
+                p.setStrokeCap(Paint.Cap.ROUND);
+                c.drawLine(m - s * 0.12f, ay + s * 0.06f, m, ay - s * 0.1f, p);
+                c.drawLine(m + s * 0.12f, ay + s * 0.06f, m, ay - s * 0.1f, p);
+                c.drawLine(m - s * 0.2f, ay + s * 0.06f, m + s * 0.2f, ay + s * 0.06f, p);
+                for (int i = 0; i < 2; i++) {
+                    float rad = s * (0.14f + 0.12f * i);
+                    r.set(m - rad, s * 0.2f - rad, m + rad, s * 0.2f + rad);
+                    c.drawArc(r, 210, 120, false, p);
+                }
+                p.setStyle(Paint.Style.FILL);
+                c.drawCircle(m, s * 0.2f, s * 0.06f, p);
+                break;
+            }
             case "timer":
                 c.drawCircle(m, m, s * 0.34f, p);
                 c.drawLine(m, m, m - s * 0.12f, m - s * 0.14f, p);

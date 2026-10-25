@@ -154,6 +154,8 @@ public class MainActivity extends Activity {
     String wallStyle;
     /** What Liquid Glass samples: a blurred copy of the wallpaper or of the carousel artwork. */
     Bitmap wallBlur, heroBlur, glassBg;
+    /** Pre-decoded first-photo bitmap from loadHero() so hero shows without a blank frame. */
+    Bitmap preloadedHeroBitmap, preloadedHeroBlur;
     final LiquidGlass.Backdrop glassSource = () -> glassBg;
     View dockRow;
     boolean returningFromSettings;
@@ -873,6 +875,20 @@ public class MainActivity extends Activity {
             tile.addView(badge, blp);
         }
 
+        // Glare sweep on focus (same as app tiles; thumbnails are always dark so white glare).
+        View cwTopSheen = new View(this);
+        cwTopSheen.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0x1AFFFFFF, 0x00FFFFFF}));
+        cwTopSheen.setAlpha(0f);
+        tile.addView(cwTopSheen, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, cardH / 2, Gravity.TOP));
+        View cwGlare = new View(this);
+        cwGlare.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                new int[]{0x00000000, 0x1AFFFFFF, 0x00000000}));
+        cwGlare.setRotation(18f);
+        cwGlare.setVisibility(View.INVISIBLE);
+        tile.addView(cwGlare, new FrameLayout.LayoutParams(cardW * 55 / 100, cardH * 2, Gravity.CENTER_VERTICAL));
+
         TextView label = text(13, Ui.font(this, "medium"), 0.9f);
         label.setText(it.title);
         label.setSingleLine(true);
@@ -886,6 +902,19 @@ public class MainActivity extends Activity {
         tile.setOnFocusChangeListener((v, has) -> {
             v.animate().scaleX(has ? 1.08f : 1f).scaleY(has ? 1.08f : 1f)
                     .translationZ(has ? dp(10) : 0).setDuration(200).setInterpolator(LIFT).start();
+            if (has) {
+                cwTopSheen.animate().alpha(1f).setDuration(200).start();
+                cwGlare.animate().cancel();
+                cwGlare.setTranslationX(-cardW * 0.7f);
+                cwGlare.setVisibility(View.VISIBLE);
+                cwGlare.animate().translationX(cardW * 1.2f).setStartDelay(40).setDuration(600)
+                        .setInterpolator(EASE)
+                        .withEndAction(() -> cwGlare.setVisibility(View.INVISIBLE)).start();
+            } else {
+                cwTopSheen.animate().alpha(0f).setDuration(160).start();
+                cwGlare.animate().cancel();
+                cwGlare.setVisibility(View.INVISIBLE);
+            }
             if (has && continueScroll != null && continueCards != null) {
                 int max = Math.max(0, continueCards.getWidth() - continueScroll.getWidth());
                 int x = cell.getLeft() + cell.getWidth() / 2 - continueScroll.getWidth() / 2;
@@ -953,21 +982,33 @@ public class MainActivity extends Activity {
                 new int[]{0x1AFFFFFF, 0x00FFFFFF}));
         topSheen.setAlpha(0f);
         tile.addView(topSheen, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, tileH / 2, Gravity.TOP));
+        // On light-background tiles the white glare is invisible; use a dark glare instead.
+        // For banner tiles the visual surface is the banner image, not the placeholder bg color,
+        // so sample the banner when present. tintFrom() clamps HSV V≤0.5; threshold at 0.35.
+        boolean lightBg = isLightColor(a.banner != null ? tintFrom(a.banner) : a.color);
+        // Gradient fades to 0 at both edges; view alpha stays 1 so the beam is punchy.
+        int glareMid = lightBg ? 0x70000000 : 0x1AFFFFFF;
         View glare = new View(this);
         glare.setBackground(new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                new int[]{0x00FFFFFF, 0x1AFFFFFF, 0x00FFFFFF}));
+                new int[]{0x00000000, glareMid, 0x00000000}));
         glare.setRotation(18f);
-        glare.setAlpha(0f);
-        tile.addView(glare, new FrameLayout.LayoutParams(tileW * 45 / 100, tileH * 2, Gravity.CENTER_VERTICAL));
+        glare.setVisibility(View.INVISIBLE);
+        tile.addView(glare, new FrameLayout.LayoutParams(tileW * 55 / 100, tileH * 2, Gravity.CENTER_VERTICAL));
 
-        TextView label = text(12, Ui.font(this, "medium"), 0f);
+        TextView label = text(10, Ui.font(this, "regular"), 0f);
         label.setText(a.label);
         label.setSingleLine(true);
         label.setEllipsize(TextUtils.TruncateAt.END);
         label.setGravity(Gravity.CENTER);
+        label.setLetterSpacing(-0.02f);
 
         cell.addView(tile, new LinearLayout.LayoutParams(tileW, tileH));
-        if (!inDock) cell.addView(label, new LinearLayout.LayoutParams(tileW, labelH));
+        if (!inDock) {
+            LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(
+                    (int) (tileW * 0.82f), labelH);
+            llp.gravity = Gravity.CENTER_HORIZONTAL;
+            cell.addView(label, llp);
+        }
 
         tile.setOnFocusChangeListener((v, has) -> {
             if (has) {
@@ -988,9 +1029,10 @@ public class MainActivity extends Activity {
                     // illuminates").
                     glare.animate().cancel();
                     glare.setTranslationX(-tileW * 0.7f);
-                    glare.setAlpha(1f);
-                    glare.animate().translationX(tileW * 1.1f).alpha(0f).setStartDelay(60).setDuration(700)
-                            .setInterpolator(EASE).start();
+                    glare.setVisibility(View.VISIBLE);
+                    glare.animate().translationX(tileW * 1.2f).setStartDelay(40).setDuration(600)
+                            .setInterpolator(EASE)
+                            .withEndAction(() -> glare.setVisibility(View.INVISIBLE)).start();
                 }
                 topSheen.animate().alpha(1f).setDuration(200).start();
                 onTileFocused(index);
@@ -1001,7 +1043,7 @@ public class MainActivity extends Activity {
                 label.animate().alpha(0f).translationY(0).setDuration(120).start();
                 topSheen.animate().alpha(0f).setDuration(160).start();
                 glare.animate().cancel();
-                glare.setAlpha(0f);
+                glare.setVisibility(View.INVISIBLE);
             }
             v.invalidate();
         });
@@ -2012,7 +2054,18 @@ public class MainActivity extends Activity {
         // moved to its own row below the app grid.
         io.execute(() -> {
             List<Suggestions.Item> nature = Nature.items();
-            handler.post(() -> setHeroItems(nature));
+            // Pre-load first photo on this thread so the hero has an image on the first frame.
+            Bitmap pb = null, pbb = null;
+            if (!nature.isEmpty() && nature.get(0).backdrop.startsWith("asset:")) {
+                Bitmap raw = Nature.load(this, nature.get(0).backdrop.substring(6), screenW);
+                if (raw != null) { pb = bakeScrims(raw); pbb = Ui.glassBackdrop(pb, 160, 90); }
+            }
+            final Bitmap finalPb = pb, finalPbb = pbb;
+            handler.post(() -> {
+                preloadedHeroBitmap = finalPb;
+                preloadedHeroBlur = finalPbb;
+                setHeroItems(nature);
+            });
         });
     }
 
@@ -2038,7 +2091,17 @@ public class MainActivity extends Activity {
             android.util.Log.w("TvHome", "watchnext: " + e);
         }
 
+        // Group: Netflix first, YouTube second, everything else after.
+        out.sort((a, b) -> appGroup(a.pkg) - appGroup(b.pkg));
         return out;
+    }
+
+    /** Ordering group for Continue Watching: 0 = Netflix, 1 = YouTube, 2 = everything else. */
+    static int appGroup(String pkg) {
+        if (pkg == null) return 2;
+        if (pkg.equals("com.netflix.ninja")) return 0;
+        if (pkg.startsWith("com.google.android.youtube")) return 1;
+        return 2;
     }
 
     /** Resume first: up to six recent Continue Watching titles, then news and recommendations. */
@@ -2139,6 +2202,14 @@ public class MainActivity extends Activity {
         // and startup don't accidentally show the credit.
     }
 
+    /** Brighten credit text when shelf is focused; dim when focus moves to status bar but hero stays open. */
+    void setCreditFocused(boolean focused) {
+        if (natureCredit == null || !(natureCredit.getTag() instanceof TextView[])) return;
+        TextView[] lines = (TextView[]) natureCredit.getTag();
+        lines[0].animate().alpha(focused ? 1.0f : 0.5f).setDuration(250).start();
+        lines[1].animate().alpha(focused ? 0.85f : 0.35f).setDuration(250).start();
+    }
+
     void shuffleWallpaper() {
         if (heroItems.isEmpty()) return;
         int next = heroIndex;
@@ -2206,6 +2277,15 @@ public class MainActivity extends Activity {
         heroIndex = index;
         Suggestions.Item it = heroItems.get(index);
         updateDotIndicator(index);
+        // Consume the pre-loaded bitmap from loadHero() if this is the startup first-photo call.
+        if (preloadedHeroBitmap != null && index == 0) {
+            Bitmap bd = preloadedHeroBitmap, bdBlur = preloadedHeroBlur;
+            preloadedHeroBitmap = null; preloadedHeroBlur = null;
+            if (bdBlur != null) { heroBlur = bdBlur; if (heroShown) glassBg = heroBlur; }
+            applyHeroInfo(it, null, dir);
+            crossfadeHero(bd, dir);
+            return;
+        }
         int want = index;
         io.execute(() -> {
             Bitmap raw;
@@ -2417,35 +2497,52 @@ public class MainActivity extends Activity {
             heroButton.setVisibility(heroIsNews() || nature ? View.GONE : View.VISIBLE);
             heroRemove.setVisibility(heroIsContinue() && !nature ? View.VISIBLE : View.GONE);
             heroRemove.setAlpha(1f);
-            // Show nature credit immediately on hero entry.
+            // Show nature credit immediately on hero entry; brighten text to indicate selection.
             if (nature && !heroItems.isEmpty()) {
                 updateNatureCredit(heroItems.get(heroIndex));
-                if (natureCredit != null) natureCredit.animate().alpha(1f).setDuration(400).start();
+                if (natureCredit != null) {
+                    natureCredit.animate().alpha(1f).setDuration(400).start();
+                    setCreditFocused(true);
+                }
             }
             if (continueMode() && heroStrip.getChildCount() > 0) heroStrip.setVisibility(View.VISIBLE);
             heroOverview.animate().alpha(0.85f).setDuration(400).setStartDelay(120).start();
             heroButton.animate().alpha(1f).setDuration(400).setStartDelay(120).start();
             handler.removeCallbacks(heroAdvance);
         } else {
-            heroButton.animate().scaleX(1f).scaleY(1f).setDuration(180).start();
-            heroButton.setElevation(0);
-            heroBtnBg.setColor(0x47FFFFFF);
-            heroBtnText.setTextColor(Color.WHITE);
-            scroll.animate().withLayer().translationY(0).setDuration(450).setInterpolator(EASE)
-                    .setUpdateListener(null).withEndAction(this::invalidateGlass).start();
-            heroInfo.animate().withLayer().translationY(heroInfoRestY()).setDuration(450).setInterpolator(EASE).start();
-            heroDots.animate().withLayer().translationY(heroDotsRestY()).setDuration(450).setInterpolator(EASE).start();
-            if (!heroIsNews()) {
-                heroOverview.animate().alpha(0f).setDuration(160).setStartDelay(0)
-                        .withEndAction(() -> heroOverview.setVisibility(View.GONE)).start();
-            }
-            heroButton.animate().alpha(0f).setDuration(160).setStartDelay(0)
-                    .withEndAction(() -> heroButton.setVisibility(View.GONE)).start();
-            if (removeSelected) selectRemove(false);
-            heroRemove.setVisibility(View.GONE);
-            heroStrip.setVisibility(View.GONE);
-            if (natureCredit != null) natureCredit.animate().alpha(0f).setDuration(200).start();
-            scheduleAdvance();
+            // Defer by one message-queue cycle so focus has fully settled before we decide
+            // whether to collapse the hero (the focus-change callback fires while the old view
+            // is still clearing, so getCurrentFocus() can transiently return the wrong view).
+            handler.post(() -> {
+                if (isDestroyed() || isFinishing()) return;
+                // If focus moved to the status bar (weather/search/time), keep the hero expanded —
+                // the user is navigating controls above without leaving the wallpaper view.
+                View f = getCurrentFocus();
+                if (f == weatherCard || f == searchButton || f == timeChipView || f == refreshButton) {
+                    setCreditFocused(false);
+                    scheduleAdvance();
+                    return;
+                }
+                heroButton.animate().scaleX(1f).scaleY(1f).setDuration(180).start();
+                heroButton.setElevation(0);
+                heroBtnBg.setColor(0x47FFFFFF);
+                heroBtnText.setTextColor(Color.WHITE);
+                scroll.animate().withLayer().translationY(0).setDuration(450).setInterpolator(EASE)
+                        .setUpdateListener(null).withEndAction(this::invalidateGlass).start();
+                heroInfo.animate().withLayer().translationY(heroInfoRestY()).setDuration(450).setInterpolator(EASE).start();
+                heroDots.animate().withLayer().translationY(heroDotsRestY()).setDuration(450).setInterpolator(EASE).start();
+                if (!heroIsNews()) {
+                    heroOverview.animate().alpha(0f).setDuration(160).setStartDelay(0)
+                            .withEndAction(() -> heroOverview.setVisibility(View.GONE)).start();
+                }
+                heroButton.animate().alpha(0f).setDuration(160).setStartDelay(0)
+                        .withEndAction(() -> heroButton.setVisibility(View.GONE)).start();
+                if (removeSelected) selectRemove(false);
+                heroRemove.setVisibility(View.GONE);
+                heroStrip.setVisibility(View.GONE);
+                if (natureCredit != null) natureCredit.animate().alpha(0f).setDuration(200).start();
+                scheduleAdvance();
+            });
         }
     }
 
@@ -2582,7 +2679,12 @@ public class MainActivity extends Activity {
                 return true;
             }
             if (k == KeyEvent.KEYCODE_DPAD_DOWN || k == KeyEvent.KEYCODE_BACK) {
-                if (down) focusBelowStatus();
+                if (down) {
+                    if (heroShown && shelfView.isFocusable() && !heroItems.isEmpty()) {
+                        setCreditFocused(true);
+                        heroRequested = true; shelfView.requestFocus();
+                    } else { focusBelowStatus(); }
+                }
                 return true;
             }
             return k == KeyEvent.KEYCODE_DPAD_UP;
@@ -2853,6 +2955,14 @@ public class MainActivity extends Activity {
             // Theme unreadable: keep the banner colour.
         }
         return fallback;
+    }
+
+    /** True if a colour is light enough that white glare won't be visible on it. */
+    static boolean isLightColor(int color) {
+        int r = Color.red(color), g = Color.green(color), b = Color.blue(color);
+        double lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255.0;
+        // tintFrom() caps HSV value at 0.5 so max achievable lum is ~0.5; threshold at 0.35.
+        return lum > 0.35;
     }
 
     static int colorDistance(int x, int y) {
@@ -3571,48 +3681,53 @@ public class MainActivity extends Activity {
         panel.setClipChildren(false);
         List<View> cells = new ArrayList<>();
 
-        // Row 1: Power | Memory (used bar; OK cleans). Row 2: Wi-Fi | Do Not Disturb.
+        // Row 1: Power Off | Volume / Mute
         cells.add(ccTile(panel, 0, 0, col, cap, "power", "Power Off", null, false, v -> {
             if (!SleepReceiver.sleepNow(this)) Perms.requestAdmin(this);
         }));
-        View mem = ccTile(panel, col + gap, 0, col, cap, "memory", "Memory", this::memoryState, false, v -> cleanMemory());
-        addMemoryBar(mem);
-        cells.add(mem);
-        cells.add(ccTile(panel, 0, cap + gap, col, cap, "wifi", "Wi-Fi", this::wifiName, false,
-                v -> {
-                    // The network name needs location access on Android 9+: ask on screen the first time.
-                    if (!Perms.hasLocation(this)) Perms.requestLocation(this);
-                    else Suggestions.start(this, new Intent(Settings.ACTION_WIFI_SETTINGS));
+        cells.add(ccTile(panel, col + gap, 0, col, cap, isMuted() ? "mute" : "volume",
+                "Volume", this::volumeState, false, v -> {
+                    android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
+                    if (am != null) am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC,
+                            android.media.AudioManager.ADJUST_SAME,
+                            android.media.AudioManager.FLAG_SHOW_UI);
+                    closeProfilePicker();
                 }));
-        cells.add(ccTile(panel, col + gap, cap + gap, col, cap, "moon", "Do Not Disturb", this::dndState, false,
-                v -> toggleDnd()));
-        // Row 3: Audio | Sleep Timer
+        // Row 2: Wi-Fi | Bluetooth
+        cells.add(ccTile(panel, 0, cap + gap, col, cap, "wifi", "Wi-Fi", this::wifiName, false,
+                v -> Suggestions.start(this, new Intent(Settings.ACTION_WIFI_SETTINGS))));
+        cells.add(ccTile(panel, col + gap, cap + gap, col, cap, "bluetooth", "Bluetooth", null, false,
+                v -> Suggestions.start(this, new Intent(Settings.ACTION_BLUETOOTH_SETTINGS))));
+        // Row 3: Audio Output | AirPlay
         int y3 = 2 * (cap + gap);
-        cells.add(ccTile(panel, 0, y3, col, cap, "audio", "Audio", this::audioOutput, false,
+        cells.add(ccTile(panel, 0, y3, col, cap, "audio", "Audio Output", this::audioOutput, false,
                 v -> Suggestions.start(this, new Intent("android.settings.SOUND_SETTINGS"))));
-        cells.add(ccTile(panel, col + gap, y3, col, cap, "timer", "Sleep Timer", this::timerState, false,
-                v -> cycleSleepTimer()));
-        // Row 4: round shortcuts \u2014 Inputs (TVs with inputs) or Accessibility, controllers, Settings, Search.
+        cells.add(ccTile(panel, col + gap, y3, col, cap, "airplay", "AirPlay", null, false, v -> {
+            // TCL AirPlay has no launcher activity \u2014 trigger via broadcast, then open Network settings
+            // where AirPlay & HomeKit appear on TCL Google TVs.
+            try { sendBroadcast(new Intent("Show.Settings.AirplayAPK")); } catch (Exception ignored) { }
+            Intent network = new Intent().setClassName(
+                    "com.android.tv.settings", "com.android.tv.settings.connectivity.NetworkActivity");
+            try { Suggestions.start(this, network); } catch (Exception e) {
+                Suggestions.start(this, new Intent(Settings.ACTION_SETTINGS));
+            }
+            closeProfilePicker();
+        }));
+        // Row 4: round shortcuts \u2014 Hume Settings, TV Settings (centred in the 2-col layout).
         int y4 = y3 + cap + gap;
-        String[] g = inputs.isEmpty() ? new String[]{"gamepad", "accessibility", "gear", "search"}
-                : new String[]{"input", "gamepad", "gear", "search"};
+        String[] g = {"house", "gear"};
+        int startX = small + gap;
         for (int i = 0; i < g.length; i++) {
             String name = g[i];
-            cells.add(ccTile(panel, i * (small + gap), y4, small, small, name, null, null, false, v -> {
+            cells.add(ccTile(panel, startX + i * (small + gap), y4, small, small, name, null, null, false, v -> {
                 switch (name) {
-                    case "gamepad": Suggestions.start(this, new Intent(Settings.ACTION_BLUETOOTH_SETTINGS)); break;
-                    case "accessibility": Suggestions.start(this, new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)); break;
-                    case "input":
-                        showInputs(ccButton);
-                        return;
-                    case "gear":
+                    case "house":
                         returningFromSettings = true;
                         startActivity(new Intent(this, SettingsActivity.class));
                         break;
-                    default:
-                        if (!Suggestions.start(this, new Intent(Intent.ACTION_ASSIST))) {
-                            Suggestions.start(this, new Intent("android.search.action.GLOBAL_SEARCH"));
-                        }
+                    case "gear":
+                        Suggestions.start(this, new Intent(Settings.ACTION_SETTINGS));
+                        break;
                 }
                 closeProfilePicker();
             }));
@@ -3841,6 +3956,21 @@ public class MainActivity extends Activity {
         } catch (Exception e) {
             return "Connected";
         }
+    }
+
+    boolean isMuted() {
+        android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
+        return am != null && (am.isStreamMute(android.media.AudioManager.STREAM_MUSIC)
+                || am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) == 0);
+    }
+
+    String volumeState() {
+        android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
+        if (am == null) return "";
+        if (isMuted()) return "Muted";
+        int vol = am.getStreamVolume(android.media.AudioManager.STREAM_MUSIC);
+        int max = am.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC);
+        return vol + " / " + max;
     }
 
     String dndState() {
