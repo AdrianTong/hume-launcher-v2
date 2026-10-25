@@ -176,7 +176,9 @@ public class MainActivity extends Activity {
     int focusedIndex = 0;
     int moveIndex = -1;
     boolean folderMode;
-    boolean resumed;
+    static boolean resumed;
+    static MainActivity instance;
+    int resumeToIndex = 0;
     ObjectAnimator wiggle;
     AppEntry shelfEntry;
     BroadcastReceiver pkgReceiver;
@@ -316,7 +318,7 @@ public class MainActivity extends Activity {
             shelfEntry = null;
             scroll.scrollTo(0, 0);
             focusIndex(0);
-        } else if (launchOverlay == null) {
+        } else if (launchOverlay == null && resumed) {
             closeMenu();
             goTop();
         }
@@ -334,6 +336,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
+        instance = this;
         String ws = Profiles.homePrefs(this).getString("wallpaper", "graphite");
         if (!ws.equals(wallStyle)) {
             wallStyle = ws;
@@ -342,7 +345,16 @@ public class MainActivity extends Activity {
         if (returningFromSettings && !folderMode && launchOverlay == null && moveIndex < 0) reload(currentKey());
         returningFromSettings = false;
         loadHero();
-        if (launchOverlay != null) finishLaunchReturn();
+        if (launchOverlay != null) {
+            finishLaunchReturn();
+        } else if (tiles != null && !tiles.isEmpty()) {
+            // Restore focus and scroll after returning from an app. Deferred so async
+            // setHeroItems settles before we re-request focus.
+            handler.postDelayed(() -> {
+                if (isDestroyed() || isFinishing() || pickerLayer != null) return;
+                focusIndex(Math.min(resumeToIndex, tiles.size() - 1));
+            }, 150);
+        }
         // Setup not finished (e.g. Home was pressed during it): pick it up again.
         if (!SetupActivity.done(this)) {
             startActivity(new Intent(this, SetupActivity.class));
@@ -374,6 +386,7 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         resumed = false;
+        resumeToIndex = focusedIndex;
         handler.removeCallbacks(heroAdvance);
         handler.removeCallbacks(weatherTick);
         handler.removeCallbacks(idleRunnable);
@@ -3197,6 +3210,11 @@ public class MainActivity extends Activity {
         updateShelf(shown.get(i));
         int row = i / COLS;
         scroll.post(() -> scrollToRow(row));
+    }
+
+    /** Called by HomeKeyService when Home is pressed while Hume is already in the foreground. */
+    void handleHomeKey() {
+        onNewIntent(new android.content.Intent());
     }
 
     void goTop() {

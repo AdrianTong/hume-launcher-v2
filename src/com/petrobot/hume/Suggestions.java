@@ -212,7 +212,7 @@ final class Suggestions {
     }
 
     static int advanceSeconds(Context c) {
-        return prefs(c).getInt(K_ADVANCE, 8);
+        return prefs(c).getInt(K_ADVANCE, 30);
     }
 
     /** Bumped on every settings change so the home screen knows to refetch. */
