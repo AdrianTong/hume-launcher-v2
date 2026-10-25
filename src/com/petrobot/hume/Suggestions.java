@@ -318,7 +318,7 @@ final class Suggestions {
                         .put("packages", new JSONArray().put(p.jwShort))
                         .put("objectTypes", new JSONArray().put(kind.equals("tv") ? "SHOW" : "MOVIE"))
                         .put("monetizationTypes", new JSONArray().put("FLATRATE").put("FREE").put("ADS"));
-                JSONObject vars = new JSONObject().put("country", "IN").put("language", "en")
+                JSONObject vars = new JSONObject().put("country", country()).put("language", "en")
                         .put("first", POOL).put("filter", filter);
                 JSONObject body = new JSONObject().put("query", JW_QUERY).put("variables", vars);
                 JSONObject res = post("https://apis.justwatch.com/graphql", body.toString());
@@ -372,6 +372,11 @@ final class Suggestions {
             if (n != null) out.add(n);
         }
         return String.join(" \u00b7 ", out);
+    }
+
+    static String country() {
+        String c = java.util.Locale.getDefault().getCountry();
+        return c != null && c.matches("[A-Z]{2}") ? c : "US";
     }
 
     static JSONObject post(String url, String json) throws Exception {

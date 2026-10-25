@@ -18,6 +18,8 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Normal-level permission: lets us try reading apps' published TV rows for the top shelf. -->
     <uses-permission android:name="com.android.providers.tv.permission.READ_EPG_DATA" />
+    <!-- Watch Next / Continue Watching from the system TV provider (grant via adb). -->
+    <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
 
     <queries>
         <intent>
@@ -90,6 +92,19 @@
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
             <meta-data android:name="android.accessibilityservice" android:resource="@xml/power_service" />
+        </service>
+
+        <!-- Home button override: intercepts Home key so it opens Hume instead of Google TV. -->
+        <service
+            android:name=".HomeKeyService"
+            android:directBootAware="true"
+            android:exported="true"
+            android:label="Hume Launcher – Home Button"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data android:name="android.accessibilityservice" android:resource="@xml/home_key_service" />
         </service>
 
         <!-- Continue Watching: reads the media sessions apps publish while playing. -->

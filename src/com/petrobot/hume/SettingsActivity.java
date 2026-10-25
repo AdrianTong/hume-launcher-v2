@@ -36,6 +36,7 @@ public class SettingsActivity extends Activity {
     protected void onCreate(Bundle b) {
         super.onCreate(b);
         Clicks.init(this);
+        Clicks.initTick(this);
         String token = getIntent().getStringExtra("tmdb_token");
         if (token != null && !token.trim().isEmpty()) {
             Suggestions.prefs(this).edit().putString(Suggestions.K_TOKEN, token.trim()).apply();
@@ -483,6 +484,16 @@ public class SettingsActivity extends Activity {
         });
         row("Navigation sounds", () -> Clicks.enabled(this) ? "On" : "Off",
                 () -> Clicks.setEnabled(this, !Clicks.enabled(this)));
+        row("Sound style", () -> Clicks.STYLE_HAVEN.equals(Clicks.style(this)) ? "Haven (tick)" : "Hume (system)", () -> {
+            String[] keys = {Clicks.STYLE_HAVEN, Clicks.STYLE_HUME};
+            String[] names = {"Haven  –  soft tick", "Hume  –  system sounds"};
+            int sel = Clicks.STYLE_HAVEN.equals(Clicks.style(this)) ? 0 : 1;
+            dialog("Sound style").setSingleChoiceItems(names, sel, (d, w) -> {
+                Clicks.setStyle(this, keys[w]);
+                refreshAll();
+                d.dismiss();
+            }).show();
+        });
         row("Full-screen carousel when idle", () -> {
             int sec = Profiles.homePrefs(this).getInt("idle_sec", 20);
             return sec == 0 ? "Off" : "After " + sec + " s";
@@ -541,6 +552,19 @@ public class SettingsActivity extends Activity {
                 () -> Perms.requestDefaultHome(this));
         row("Wi-Fi name in Control Center", () -> Perms.hasLocation(this) ? "Allowed" : "Allow\u2026",
                 () -> Perms.requestLocation(this));
+        row("Home button override", () -> homeKeyEnabled() ? "Active \u2013 Home opens Hume" : "Enable in Accessibility\u2026",
+                () -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+    }
+
+    private boolean homeKeyEnabled() {
+        android.view.accessibility.AccessibilityManager am =
+                (android.view.accessibility.AccessibilityManager) getSystemService(ACCESSIBILITY_SERVICE);
+        android.content.ComponentName me = new android.content.ComponentName(this, HomeKeyService.class);
+        for (android.accessibilityservice.AccessibilityServiceInfo info
+                : am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)) {
+            if (me.equals(android.content.ComponentName.unflattenFromString(info.getId()))) return true;
+        }
+        return false;
     }
 
     void pageAbout() {

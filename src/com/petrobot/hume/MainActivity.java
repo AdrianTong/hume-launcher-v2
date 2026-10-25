@@ -148,6 +148,7 @@ public class MainActivity extends Activity {
     GradientDrawable heroBtnBg;
     List<Suggestions.Item> heroItems = new ArrayList<>();
     int heroIndex;
+    int heroActiveSlot = 2;  // which of the 5 dot slots is lit: 0-4, starts at center (2)
     boolean heroShown;          // carousel currently forms the background
     int heroVersion = -1;       // Suggestions.version() the items were loaded for
     String wallStyle;
@@ -167,6 +168,7 @@ public class MainActivity extends Activity {
     LinearLayout titleBox;
     View chevron;
     TextView shelfTitle, shelfHint;
+    LinearLayout natureCredit;
     float unit = 2f;
     int screenW, screenH, tileW, tileH, gap, side, shelfH, labelH, radius, dockPadV, dockInset, dockOuter;
     int focusedIndex = 0;
@@ -212,6 +214,7 @@ public class MainActivity extends Activity {
         dockPadV = dp(20);
 
         Clicks.init(this);
+        Clicks.initTick(this);
         // Startup: the app list (package manager, banners, icon colours) and the wallpaper are
         // prepared in the background while the window's views are built (~250 ms saved on 1 GHz TVs).
         java.util.concurrent.Future<?> appsTask = io.submit(this::loadApps);
@@ -506,14 +509,26 @@ public class MainActivity extends Activity {
         timeChip.setOrientation(LinearLayout.HORIZONTAL);
         timeChip.setGravity(Gravity.CENTER_VERTICAL);
         timeChip.setPadding(dp(12), 0, dp(14), 0);
-        GradientDrawable chipBg = new GradientDrawable();
-        chipBg.setCornerRadius(btn / 2f);
-        chipBg.setColor(0x47000000);
-        timeChip.setBackground(chipBg);
+        LiquidGlass chipGlass = new LiquidGlass(btn / 2f, 0x1F000000, glassSource, screenW, screenH, unit).adaptive();
+        chipGlass.lens = dp(4);
+        timeChip.setBackground(chipGlass);
+        GradientDrawable chipLit = new GradientDrawable();
+        chipLit.setCornerRadius(btn / 2f);
+        chipLit.setColor(Color.WHITE);
         time.setShadowLayer(dp(8), 0, dp(1), 0x99000000);
         timeChip.addView(netIcon, nlp);
         timeChip.addView(time);
-        clockBox.addView(timeChip, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, btn));
+        timeChip.setFocusable(true);
+        timeChip.setClickable(true);
+        timeChipView = timeChip;
+        timeChip.setOnClickListener(v -> showControlCenter());
+        timeChip.setOnFocusChangeListener((v, has) -> {
+            chipGlass.setLit(has);
+            v.animate().scaleX(has ? 1.05f : 1f).scaleY(has ? 1.05f : 1f).translationZ(has ? dp(10) : 0)
+                    .setDuration(200).setInterpolator(LIFT).start();
+        });
+        // timeChip added after searchButton so order is: [Search] [Time/CC chip]
+        LinearLayout.LayoutParams timeChipLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, btn);
 
         // Refresh: reloads every part of the carousel (recommendations, news, Continue Watching) and weather.
         refreshButton = new ImageView(this);
@@ -526,7 +541,8 @@ public class MainActivity extends Activity {
         refreshButton.setClickable(true);
         LinearLayout.LayoutParams rblp = new LinearLayout.LayoutParams(btn, btn);
         rblp.leftMargin = dp(18);
-        clockBox.addView(refreshButton, rblp);
+        // Refresh button hidden by user preference. Keep the view instance so other code can still reference it safely.
+        refreshButton.setVisibility(View.GONE);
         GradientDrawable rfLit = new GradientDrawable();
         rfLit.setShape(GradientDrawable.OVAL);
         rfLit.setColor(Color.WHITE);
@@ -553,11 +569,15 @@ public class MainActivity extends Activity {
         seLit.setShape(GradientDrawable.OVAL);
         seLit.setColor(Color.WHITE);
         searchButton.setOnFocusChangeListener((v, has) -> {
-            searchButton.setBackground(has ? seLit : seGlass);
-            searchButton.setImageBitmap(Glyphs.get("search", dp(20), has ? 0xFF111114 : Color.WHITE));
-            v.animate().scaleX(has ? 1.12f : 1f).scaleY(has ? 1.12f : 1f).setDuration(200).setInterpolator(LIFT).start();
+            seGlass.setLit(has);
+            v.animate().scaleX(has ? 1.05f : 1f).scaleY(has ? 1.05f : 1f).translationZ(has ? dp(10) : 0)
+                    .setDuration(200).setInterpolator(LIFT).start();
         });
         searchButton.setOnClickListener(v -> showSearch(null));
+
+        // Add timeChip here so it appears to the right of search.
+        timeChipLp.leftMargin = dp(12);
+        clockBox.addView(timeChip, timeChipLp);
 
         ccButton = new ImageView(this);
         ccButton.setScaleType(ImageView.ScaleType.CENTER);
@@ -569,7 +589,8 @@ public class MainActivity extends Activity {
         ccButton.setClickable(true);
         LinearLayout.LayoutParams cblp = new LinearLayout.LayoutParams(btn, btn);
         cblp.leftMargin = dp(12);
-        clockBox.addView(ccButton, cblp);
+        // CC button replaced by the time chip — keep the view for reference but don't show it.
+        ccButton.setVisibility(View.GONE);
         GradientDrawable ccLit = new GradientDrawable();
         ccLit.setShape(GradientDrawable.OVAL);
         ccLit.setColor(Color.WHITE);
@@ -591,12 +612,13 @@ public class MainActivity extends Activity {
                 o.setOval(0, 0, v.getWidth(), v.getHeight());
             }
         });
-        avatar.setElevation(dp(2));
+        avatar.setClipToOutline(true);
         avatarView = avatar;
         avatarSize = av;
         LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(av, av);
         alp.leftMargin = dp(12);
-        clockBox.addView(avatar, alp);
+        // Profile avatar hidden by user preference. Keep the view instance so other code can still reference it safely.
+        avatar.setVisibility(View.GONE);
         avatar.setOnFocusChangeListener((v, has) ->
                 v.animate().scaleX(has ? 1.18f : 1f).scaleY(has ? 1.18f : 1f).translationZ(has ? dp(8) : 0)
                         .setDuration(200).setInterpolator(LIFT).start());
@@ -660,10 +682,28 @@ public class MainActivity extends Activity {
         // to the top); block that while rebuilding \u2014 callers focus the right card afterwards.
         content.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         while (content.getChildCount() > 1) content.removeViewAt(1);
+        // During a move operation keep the CW row intact — rebuilding it on every d-pad press
+        // causes visible flicker. Only null the fields on a full rebuild.
+        if (moveIndex < 0) {
+            continueRow = continueCards = null;
+            continueScroll = null;
+            continueTitle = null;
+        }
         tiles.clear();
         LinearLayout row = null;
+        boolean cwInserted = false;
         for (int i = 0; i < shown.size(); i++) {
             if (i % COLS == 0) {
+                // Insert Continue Watching after the dock. Skip during move — rebuilding
+                // on every d-pad press causes flicker; the existing row is re-added below.
+                if (!folderMode && !cwInserted && i > 0 && hasDock()) {
+                    if (moveIndex < 0) {
+                        buildContinueRow();
+                    } else if (continueRow != null) {
+                        content.addView(continueRow);
+                    }
+                    cwInserted = true;
+                }
                 row = new LinearLayout(this);
                 row.setOrientation(LinearLayout.HORIZONTAL);
                 row.setClipChildren(false);
@@ -673,7 +713,6 @@ public class MainActivity extends Activity {
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
                 rlp.bottomMargin = gap / 2;
                 if (i == 0 && hasDock()) {
-                    // tvOS 26 dock: the top row sits on one frosted glass panel.
                     row.setPadding(dockInset, dockPadV, dockInset, dockPadV);
                     rlp.leftMargin = side - dockInset;
                     rlp.rightMargin = side - dockInset;
@@ -687,7 +726,196 @@ public class MainActivity extends Activity {
             if (i % COLS != 0) lp.leftMargin = gap;
             row.addView(makeCell(shown.get(i), i, i < COLS && hasDock()), lp);
         }
+        // If there was no dock or only one row of apps, append CW at the end.
+        if (!folderMode && !cwInserted) {
+            if (moveIndex < 0) buildContinueRow();
+            else if (continueRow != null) content.addView(continueRow);
+        }
         content.setDescendantFocusability(ViewGroup.FOCUS_AFTER_DESCENDANTS);
+    }
+
+    /**
+     * Horizontal "Continue Watching" row inserted between the dock and the app grid. Each card
+     * is 2x the width of an app tile with the title below and an app-source badge in the corner.
+     * Horizontally scrollable; focused card auto-centres.
+     */
+    LinearLayout continueRow;
+    LinearLayout continueCards;
+    TextView continueTitle;
+    android.widget.HorizontalScrollView continueScroll;
+    android.view.ViewTreeObserver.OnGlobalFocusChangeListener continueFocusListener;
+
+    void buildContinueRow() {
+        LinearLayout wrap = new LinearLayout(this);
+        wrap.setOrientation(LinearLayout.VERTICAL);
+        wrap.setPadding(side, dp(4), side, dp(28));
+        wrap.setClipChildren(false);
+        wrap.setClipToPadding(false);
+        wrap.setVisibility(View.GONE);
+        continueRow = wrap;
+
+        TextView title = text(14, Ui.font(this, "semibold"), 0.75f);
+        title.setText("Continue Watching");
+        title.setPadding(0, 0, 0, dp(10));
+        title.setAlpha(0f);  // hidden until focus moves below the dock
+        continueTitle = title;
+        wrap.addView(title);
+
+        // Global focus listener: show the title when focus is on the CW row or below.
+        // Saved as a field; skip reinstall during move to avoid overhead on every d-pad press.
+        if (moveIndex >= 0) return;
+        if (continueFocusListener != null)
+            root.getViewTreeObserver().removeOnGlobalFocusChangeListener(continueFocusListener);
+        continueFocusListener = (oldF, newF) -> {
+            if (continueTitle == null) return;
+            boolean belowDock = isContinueOrBelowDock(newF);
+            continueTitle.animate().cancel();
+            continueTitle.animate().alpha(belowDock ? 0.9f : 0f).setDuration(180).start();
+        };
+        root.getViewTreeObserver().addOnGlobalFocusChangeListener(continueFocusListener);
+
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        hs.setClipChildren(false);
+        hs.setClipToPadding(false);
+        hs.setPadding(0, dp(8), 0, dp(8));  // room for focus-zoom to grow without clipping
+        hs.setFocusable(false);
+        continueScroll = hs;
+
+        LinearLayout cards = new LinearLayout(this);
+        cards.setOrientation(LinearLayout.HORIZONTAL);
+        cards.setClipChildren(false);
+        cards.setClipToPadding(false);
+        continueCards = cards;
+        hs.addView(cards);
+
+        LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        wrap.addView(hs, hp);
+
+        LinearLayout.LayoutParams wlp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        content.addView(wrap, wlp);
+
+        io.execute(() -> {
+            List<Suggestions.Item> items = new ArrayList<>();
+            try {
+                items = MediaWatchService.Store.list(this);
+                items = mergeWatchNext(items);
+            } catch (Exception e) {
+                android.util.Log.w("TvHome", "cw row: " + e);
+            }
+            final List<Suggestions.Item> finalItems = items;
+            handler.post(() -> { if (!isDestroyed() && !isFinishing()) fillContinueRow(finalItems); });
+        });
+    }
+
+    void fillContinueRow(List<Suggestions.Item> items) {
+        if (continueCards == null || continueRow == null) return;
+        continueCards.removeAllViews();
+        if (items.isEmpty()) {
+            continueRow.setVisibility(View.GONE);
+            return;
+        }
+        int cardW = tileW * 2 + gap;
+        int cardH = Math.round(cardW * 9f / 16f);
+        for (Suggestions.Item it : items) {
+            continueCards.addView(makeContinueCard(it, cardW, cardH));
+        }
+        continueRow.setVisibility(View.VISIBLE);
+    }
+
+    View makeContinueCard(Suggestions.Item it, int cardW, int cardH) {
+        LinearLayout cell = new LinearLayout(this);
+        cell.setOrientation(LinearLayout.VERTICAL);
+        cell.setClipChildren(false);
+
+        FrameLayout tile = new FrameLayout(this);
+        tile.setFocusable(true);
+        tile.setClickable(true);
+        GradientDrawable tbg = new GradientDrawable();
+        tbg.setCornerRadius(radius);
+        tbg.setColor(0xFF1C1C1E);
+        tile.setBackground(tbg);
+        tile.setOutlineProvider(roundedOutline(new float[]{radius}));
+        tile.setClipToOutline(true);
+        cell.setClipChildren(false);
+        cell.setClipToPadding(false);
+
+        ImageView art = new ImageView(this);
+        art.setScaleType(ImageView.ScaleType.CENTER_CROP);
+        tile.addView(art, new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+
+        io.execute(() -> {
+            Bitmap bmp = Suggestions.image(this, it.backdrop, "w780", cardW);
+            if (bmp != null) handler.post(() -> { if (!isDestroyed() && !isFinishing()) art.setImageBitmap(bmp); });
+        });
+
+        // Small translucent app-source badge in the bottom-right (Haven-style).
+        String appName = it.pkg != null && !it.pkg.isEmpty() ? appLabel(it.pkg) : "";
+        if (!appName.isEmpty()) {
+            TextView badge = text(10, Ui.font(this, "medium"), 1f);
+            badge.setText(appName);
+            badge.setTextColor(0xE6FFFFFF);
+            badge.setShadowLayer(0, 0, 0, 0);
+            badge.setPadding(dp(6), dp(2), dp(6), dp(2));
+            GradientDrawable bbg = new GradientDrawable();
+            bbg.setColor(0x80000000);
+            bbg.setCornerRadius(dp(6));
+            badge.setBackground(bbg);
+            FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                    Gravity.BOTTOM | Gravity.RIGHT);
+            blp.rightMargin = dp(6);
+            blp.bottomMargin = dp(6);
+            tile.addView(badge, blp);
+        }
+
+        TextView label = text(13, Ui.font(this, "medium"), 0.9f);
+        label.setText(it.title);
+        label.setSingleLine(true);
+        label.setEllipsize(TextUtils.TruncateAt.END);
+        LinearLayout.LayoutParams llp = new LinearLayout.LayoutParams(cardW, ViewGroup.LayoutParams.WRAP_CONTENT);
+        llp.topMargin = dp(6);
+
+        cell.addView(tile, new LinearLayout.LayoutParams(cardW, cardH));
+        cell.addView(label, llp);
+
+        tile.setOnFocusChangeListener((v, has) -> {
+            v.animate().scaleX(has ? 1.08f : 1f).scaleY(has ? 1.08f : 1f)
+                    .translationZ(has ? dp(10) : 0).setDuration(200).setInterpolator(LIFT).start();
+            if (has && continueScroll != null && continueCards != null) {
+                int max = Math.max(0, continueCards.getWidth() - continueScroll.getWidth());
+                int x = cell.getLeft() + cell.getWidth() / 2 - continueScroll.getWidth() / 2;
+                continueScroll.smoothScrollTo(Math.max(0, Math.min(max, x)), 0);
+                // The "transition" (hero collapse, chevron reveal, scroll-up) happens here —
+                // once at the Continue Watching row, not again at the first grid row.
+                setHeroShown(false);
+                scrollToContinueRow();
+            }
+        });
+        tile.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                // Up from CW goes to the dock (nearest dock tile horizontally).
+                View target = nearestDockTile(cell);
+                if (target != null) { target.requestFocus(); return true; }
+            } else if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                // Down from CW goes to the first grid row below the dock.
+                View target = firstGridTileBelowDock();
+                if (target != null) { target.requestFocus(); return true; }
+            }
+            return false;
+        });
+        tile.setOnClickListener(v -> openHeroItem(it));
+
+        LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        clp.rightMargin = gap;
+        cell.setLayoutParams(clp);
+        return cell;
     }
 
     View makeCell(AppEntry a, int index, boolean inDock) {
@@ -732,7 +960,7 @@ public class MainActivity extends Activity {
         glare.setAlpha(0f);
         tile.addView(glare, new FrameLayout.LayoutParams(tileW * 45 / 100, tileH * 2, Gravity.CENTER_VERTICAL));
 
-        TextView label = text(15, Ui.font(this, "medium"), 0f);
+        TextView label = text(12, Ui.font(this, "medium"), 0f);
         label.setText(a.label);
         label.setSingleLine(true);
         label.setEllipsize(TextUtils.TruncateAt.END);
@@ -793,8 +1021,63 @@ public class MainActivity extends Activity {
             if (moveIndex < 0 && !FOLDER_KEY.equals(a.key)) showOptions(index);
             return true;
         });
+        // Dock tiles: DOWN jumps to the Continue Watching row (if visible). Grid tiles: UP from
+        // the first grid row jumps back to the Continue Watching row.
+        tile.setOnKeyListener((v, keyCode, event) -> {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return false;
+            if (keyCode == KeyEvent.KEYCODE_DPAD_DOWN && inDock) {
+                View cwTile = firstContinueTile();
+                if (cwTile != null) { cwTile.requestFocus(); return true; }
+            }
+            if (keyCode == KeyEvent.KEYCODE_DPAD_UP && !inDock && index < 2 * COLS && hasDock()) {
+                // First grid row (indices COLS..2*COLS-1) going up: Continue Watching, then dock.
+                View cwTile = firstContinueTile();
+                if (cwTile != null) { cwTile.requestFocus(); return true; }
+            }
+            return false;
+        });
         tiles.add(tile);
         return cell;
+    }
+
+    /** First focusable Continue Watching card, or null if the row isn't showing. */
+    View firstContinueTile() {
+        if (continueRow == null || continueRow.getVisibility() != View.VISIBLE
+                || continueCards == null || continueCards.getChildCount() == 0) return null;
+        View cell = continueCards.getChildAt(0);
+        if (cell instanceof ViewGroup) {
+            ViewGroup vg = (ViewGroup) cell;
+            if (vg.getChildCount() > 0) return vg.getChildAt(0);
+        }
+        return cell;
+    }
+
+    /** Dock tile whose center is nearest horizontally to the given CW cell. */
+    View nearestDockTile(View cwCell) {
+        if (!(dockRow instanceof ViewGroup)) return null;
+        ViewGroup dock = (ViewGroup) dockRow;
+        int[] loc = new int[2];
+        cwCell.getLocationOnScreen(loc);
+        int cx = loc[0] + cwCell.getWidth() / 2;
+        View best = null;
+        int bestD = Integer.MAX_VALUE;
+        for (int i = 0; i < dock.getChildCount(); i++) {
+            View child = dock.getChildAt(i);
+            View focusable = child instanceof ViewGroup && ((ViewGroup) child).getChildCount() > 0
+                    ? ((ViewGroup) child).getChildAt(0) : child;
+            focusable.getLocationOnScreen(loc);
+            int d = Math.abs(loc[0] + focusable.getWidth() / 2 - cx);
+            if (d < bestD) { bestD = d; best = focusable; }
+        }
+        return best;
+    }
+
+    /** First tile of the first grid row (immediately below the dock + CW row). */
+    View firstGridTileBelowDock() {
+        if (tiles.isEmpty()) return null;
+        int start = hasDock() ? COLS : 0;
+        if (start < tiles.size()) return tiles.get(start);
+        return tiles.get(0);
     }
 
     /** tvOS-style ambient colour field: soft glows of indigo, teal, magenta and amber on navy. */
@@ -820,13 +1103,15 @@ public class MainActivity extends Activity {
 
     void invalidateGlass() {
         if (dockRow != null) dockRow.invalidate();
-        if (clockBox != null) clockBox.invalidate();
         if (weatherCard != null) weatherCard.invalidate();
+        // Glass backgrounds live on the child views, not on clockBox itself.
+        if (searchButton != null) searchButton.invalidate();
+        if (timeChipView != null) timeChipView.invalidate();
         if (menuLayer != null && menuLayer.getChildCount() > 0) menuLayer.getChildAt(0).invalidate();
     }
 
-    static final String[] WALL_KEYS = {"aurora", "midnight", "sunset", "ocean", "graphite"};
-    static final String[] WALL_NAMES = {"Aurora", "Midnight", "Sunset", "Ocean", "Graphite"};
+    static final String[] WALL_KEYS = {"aurora", "midnight", "sunset", "ocean", "graphite", "black"};
+    static final String[] WALL_NAMES = {"Aurora", "Midnight", "Sunset", "Ocean", "Graphite", "Pure Black"};
 
     Bitmap makeWallpaper(String style) {
         return bakeShade(makeWallpaperBase(style));
@@ -845,6 +1130,10 @@ public class MainActivity extends Activity {
         int w = 192, h = 108;
         Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(b);
+        if ("black".equals(style)) {
+            c.drawColor(Color.BLACK);
+            return b;
+        }
         int base;
         int[] colors;
         switch (style) {
@@ -1477,6 +1766,25 @@ public class MainActivity extends Activity {
 
         buildSwitcher();
 
+        // Nature photo credit: location + photographer, bottom-left, visible only in hero mode.
+        LinearLayout credit = new LinearLayout(this);
+        credit.setOrientation(LinearLayout.VERTICAL);
+        credit.setAlpha(0f);
+        natureCredit = credit;
+        TextView creditLocation = text(12, Ui.font(this, "semibold"), 0.9f);
+        creditLocation.setShadowLayer(dp(4), 0, dp(1), 0x88000000);
+        TextView creditPhoto = text(11, Ui.font(this, "regular"), 0.65f);
+        creditPhoto.setShadowLayer(dp(4), 0, dp(1), 0x88000000);
+        credit.addView(creditLocation);
+        credit.addView(creditPhoto);
+        credit.setTag(new TextView[]{creditLocation, creditPhoto});
+        FrameLayout.LayoutParams creditLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM | Gravity.START);
+        creditLp.leftMargin = dp(48);
+        creditLp.bottomMargin = dp(90);
+        shelf.addView(credit, creditLp);
+
         // The shelf itself is the carousel's focus target (UP from the dock).
         shelf.setFocusable(false);
         shelf.setOnFocusChangeListener((v, has) -> heroFocused(has));
@@ -1583,6 +1891,8 @@ public class MainActivity extends Activity {
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, h,
                 Gravity.TOP | Gravity.CENTER_HORIZONTAL);
         lp.topMargin = dp(26);
+        // Nature wallpaper mode: no tabs to switch between.
+        switcher.setVisibility(View.GONE);
         root.addView(switcher, lp);
         switcher.setOnFocusChangeListener((v, has) -> {
             styleTabs();
@@ -1644,7 +1954,7 @@ public class MainActivity extends Activity {
         if (switcher == null) return;
         if (!"suggest".equals(shelfMode)) setShelfMode("suggest");
         boolean show = tabsShown();
-        if (!show && switcher.isFocused()) ccButton.requestFocus();
+        if (!show && switcher.isFocused()) { if (timeChipView != null) timeChipView.requestFocus(); else searchButton.requestFocus(); }
         switcher.setVisibility(show ? View.VISIBLE : View.GONE);
     }
 
@@ -1662,7 +1972,16 @@ public class MainActivity extends Activity {
 
     /** Up from the shelf/dock: the tab bar, or the status row when the tab bar is hidden. */
     void focusTop() {
-        (switcher != null && switcher.getVisibility() == View.VISIBLE ? switcher : ccButton).requestFocus();
+        if (weatherShown()) { weatherCard.requestFocus(); return; }
+        if (switcher != null && switcher.getVisibility() == View.VISIBLE) { switcher.requestFocus(); return; }
+        focusStatusRow();
+    }
+
+    /** Focus the first visible button in the status row (time chip → search → refresh). */
+    void focusStatusRow() {
+        if (timeChipView != null && timeChipView.getVisibility() == View.VISIBLE) { timeChipView.requestFocus(); return; }
+        if (searchButton != null && searchButton.getVisibility() == View.VISIBLE) { searchButton.requestFocus(); return; }
+        if (refreshButton != null && refreshButton.getVisibility() == View.VISIBLE) refreshButton.requestFocus();
     }
 
     boolean continueMode() {
@@ -1689,33 +2008,37 @@ public class MainActivity extends Activity {
         int v = Suggestions.version(this) * 2 + (cw ? 1 : 0);
         boolean reconfigured = v != heroVersion;
         heroVersion = v;
+        // Top shelf now shows a rotating set of high-res nature wallpapers; Continue Watching
+        // moved to its own row below the app grid.
         io.execute(() -> {
-            List<Suggestions.Item> cwItems = cw ? MediaWatchService.Store.list(this) : new ArrayList<>();
-            StringBuilder sig = new StringBuilder();
-            for (Suggestions.Item it : cwItems) sig.append(it.key).append(it.progress).append(';');
-            boolean cwChanged = !sig.toString().equals(lastCwSig);
-            lastCwSig = sig.toString();
-            List<Suggestions.Item> base = shelf ? Suggestions.cached(this, true) : null;
-            List<Suggestions.Item> mixed = mixContinue(base, cwItems);
-            if (!mixed.isEmpty() && (reconfigured || cwChanged || heroItems.isEmpty())) {
-                handler.post(() -> setHeroItems(mixed));
-            } else if (mixed.isEmpty()) {
-                handler.post(() -> {
-                    heroItems = new ArrayList<>();
-                    shelfView.setFocusable(false);
-                    setHeroShown(false);
-                });
-            }
-            if (shelf && Suggestions.cached(this, false) == null) {
-                try {
-                    List<Suggestions.Item> fresh = Suggestions.fetch(this);
-                    List<Suggestions.Item> m2 = mixContinue(fresh, cwItems);
-                    handler.post(() -> setHeroItems(m2));
-                } catch (Exception e) {
-                    android.util.Log.w("TvHome", "suggestions: " + e);
-                }
-            }
+            List<Suggestions.Item> nature = Nature.items();
+            handler.post(() -> setHeroItems(nature));
         });
+    }
+
+    /**
+     * Merges MediaWatchService continue watching items with Watch Next rows from the system TV
+     * provider (apps like YouTube and Prime publish here), then appends Netflix trending titles.
+     * MediaWatchService items (with real position data) come first; Watch Next items not already
+     * represented by title are added next; Netflix fills in after that.
+     */
+    List<Suggestions.Item> mergeWatchNext(List<Suggestions.Item> mediaItems) {
+        List<Suggestions.Item> out = new ArrayList<>(mediaItems);
+        Set<String> seenTitles = new HashSet<>();
+        for (Suggestions.Item it : out) seenTitles.add(it.title.toLowerCase());
+
+        // Watch Next from system TV provider (YouTube, Prime, etc.)
+        try {
+            List<WatchNext.Item> wn = WatchNext.load(this, 10);
+            for (WatchNext.Item w : wn) {
+                if (!seenTitles.add(w.title.toLowerCase())) continue;
+                out.add(WatchNext.toSuggestion(w));
+            }
+        } catch (Exception e) {
+            android.util.Log.w("TvHome", "watchnext: " + e);
+        }
+
+        return out;
     }
 
     /** Resume first: up to six recent Continue Watching titles, then news and recommendations. */
@@ -1743,20 +2066,25 @@ public class MainActivity extends Activity {
         boolean same = curTitle != null && heroFront.getDrawable() != null;
         if (items.size() > 24) items = new ArrayList<>(items.subList(0, 24));
         heroItems = items;
+        heroActiveSlot = 2;  // reset to center when items refresh
         int keep = 0;
         for (int i = 0; curTitle != null && i < items.size(); i++) if (items.get(i).title.equals(curTitle)) keep = i;
         heroIndex = keep;
         shelfView.setFocusable(!items.isEmpty());
         heroDots.removeAllViews();
-        for (int i = 0; i < items.size() && items.size() > 1 && !continueMode(); i++) {
-            View d = new View(this);
-            GradientDrawable g = new GradientDrawable();
-            g.setShape(GradientDrawable.OVAL);
-            g.setColor(Color.WHITE);
-            d.setBackground(g);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(5), dp(5));
-            lp.rightMargin = dp(5);
-            heroDots.addView(d, lp);
+        // Dynamic page indicator: always 5 dots, slides like Instagram's carousel indicator.
+        if (items.size() > 1 && !continueMode()) {
+            int slots = Math.min(5, items.size());
+            for (int i = 0; i < slots; i++) {
+                View d = new View(this);
+                GradientDrawable g = new GradientDrawable();
+                g.setShape(GradientDrawable.OVAL);
+                g.setColor(Color.WHITE);
+                d.setBackground(g);
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(6), dp(6));
+                lp.rightMargin = dp(6);
+                heroDots.addView(d, lp);
+            }
         }
         buildStrip(items);
         if (items.isEmpty()) {
@@ -1768,7 +2096,7 @@ public class MainActivity extends Activity {
         boolean dock = f == shelfView || (hasDock() && i >= 0 && i < COLS);
         setHeroShown(dock);
         if (!(same && items.get(keep).title.equals(curTitle))) showHero(keep, 0);
-        else for (int j = 0; j < heroDots.getChildCount(); j++) heroDots.getChildAt(j).setAlpha(j == keep ? 1f : 0.35f);
+        else updateDotIndicator(keep);
         List<Suggestions.Item> pre = items;
         io.execute(() -> {
             for (Suggestions.Item it : pre) {
@@ -1800,6 +2128,61 @@ public class MainActivity extends Activity {
         if (show) scheduleAdvance();
     }
 
+    void updateNatureCredit(Suggestions.Item it) {
+        if (natureCredit == null || !(natureCredit.getTag() instanceof TextView[])) return;
+        TextView[] lines = (TextView[]) natureCredit.getTag();
+        lines[0].setText(it.title);
+        boolean hasCredit = it.overview != null && !it.overview.isEmpty();
+        lines[1].setText(hasCredit ? "Photo by " + it.overview : "");
+        lines[1].setVisibility(hasCredit ? View.VISIBLE : View.GONE);
+        // Alpha is managed exclusively by heroFocused — never changed here so auto-advance
+        // and startup don't accidentally show the credit.
+    }
+
+    void shuffleWallpaper() {
+        if (heroItems.isEmpty()) return;
+        int next = heroIndex;
+        while (heroItems.size() > 1 && next == heroIndex)
+            next = (int) (Math.random() * heroItems.size());
+        heroActiveSlot = 2;  // reset to centre on a jump so dot indicator is consistent
+        showHero(next, 1);
+        heroIndex = next;
+    }
+
+    /**
+     * Dynamic 5-dot page indicator. Slots 0 and 4 are fixed overflow markers (dim, small).
+     * The lit dot lives in slots 1-3 and is tracked by heroActiveSlot:
+     *   slot 1 = shifted left (scrolling through left portion)
+     *   slot 2 = centre (default)
+     *   slot 3 = shifted right (scrolling through right portion)
+     */
+    void updateDotIndicator(int index) {
+        int n = heroDots.getChildCount();  // always 5
+        int total = heroItems.size();
+        if (n == 0 || total <= 1) return;
+
+        int activeSlot = heroActiveSlot;
+        // Window start derived from active slot so the window moves behind the indicator.
+        int windowStart = Math.max(0, Math.min(index - activeSlot, total - n));
+
+        for (int i = 0; i < n; i++) {
+            View dot = heroDots.getChildAt(i);
+            boolean isCurrent = i == activeSlot;
+            boolean isEdge = (i == 0 && windowStart > 0)
+                    || (i == n - 1 && windowStart + n < total);
+
+            int sz = isCurrent ? dp(7) : isEdge ? dp(3) : dp(5);
+            float alpha = isCurrent ? 1f : isEdge ? 0.28f : 0.5f;
+
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) dot.getLayoutParams();
+            lp.width = sz;
+            lp.height = sz;
+            lp.topMargin = (dp(7) - sz) / 2;
+            dot.setLayoutParams(lp);
+            dot.animate().alpha(alpha).setDuration(200).start();
+        }
+    }
+
     void scheduleAdvance() {
         handler.removeCallbacks(heroAdvance);
         if (continueMode()) return;  // Up Next stays put
@@ -1810,6 +2193,10 @@ public class MainActivity extends Activity {
 
     void heroStep(int dir, boolean user) {
         if (heroItems.size() < 2) return;
+        // Update active slot: stays in range [1..3] (slots 0 and 4 are overflow markers).
+        // Going right pushes slot toward 3; going left pushes toward 1; opposite direction snaps to 2.
+        if (dir > 0) heroActiveSlot = heroActiveSlot < 3 ? heroActiveSlot + 1 : 3;
+        else if (dir < 0) heroActiveSlot = heroActiveSlot > 1 ? heroActiveSlot - 1 : 1;
         showHero((heroIndex + dir + heroItems.size()) % heroItems.size(), dir);
         if (!user || !shelfView.hasFocus()) scheduleAdvance();
     }
@@ -1818,27 +2205,30 @@ public class MainActivity extends Activity {
     void showHero(int index, int dir) {
         heroIndex = index;
         Suggestions.Item it = heroItems.get(index);
-        for (int i = 0; i < heroDots.getChildCount(); i++) {
-            heroDots.getChildAt(i).animate().alpha(i == index ? 1f : 0.35f).setDuration(250).start();
-        }
+        updateDotIndicator(index);
         int want = index;
         io.execute(() -> {
-            Bitmap raw = Suggestions.image(this, it.backdrop, "w1280", Math.min(1280, screenW));
+            Bitmap raw;
+            if ("nature".equals(it.type) && it.backdrop.startsWith("asset:")) {
+                raw = Nature.load(this, it.backdrop.substring(6), screenW);
+            } else {
+                raw = Suggestions.image(this, it.backdrop, "w1280", Math.min(1280, screenW));
+            }
             Bitmap bd = "news".equals(it.type) ? bakeNews(raw) : bakeScrims(raw);
             Bitmap bdBlur = Ui.glassBackdrop(bd, 160, 90);
             String logoPath = Suggestions.logoFor(this, it);
             Bitmap logo = logoPath.isEmpty() ? null : Suggestions.image(this, logoPath, "w500", 500);
             handler.post(() -> {
+                if (isDestroyed() || isFinishing()) return;
                 if (heroIndex != want || heroItems.isEmpty()) return;
-                applyHeroInfo(it, logo, dir);
-                if (bd != null) crossfadeHero(bd, dir);
+                // Update glass source before crossfade so the first frame uses the new blur.
                 if (bdBlur != null) {
                     heroBlur = bdBlur;
-                    if (heroShown) {
-                        glassBg = heroBlur;
-                        invalidateGlass();
-                    }
+                    if (heroShown) glassBg = heroBlur;
                 }
+                applyHeroInfo(it, logo, dir);
+                if (bd != null) crossfadeHero(bd, dir);
+                else invalidateGlass();  // no animation path: force one redraw
             });
         });
     }
@@ -1846,6 +2236,20 @@ public class MainActivity extends Activity {
     /** Title/meta/overview for an item, applied in the same frame as its artwork. */
     void applyHeroInfo(Suggestions.Item it, Bitmap logo, int dir) {
         boolean news = "news".equals(it.type);
+        if ("nature".equals(it.type)) {
+            heroTitle.setVisibility(View.GONE);
+            heroOverview.setVisibility(View.GONE);
+            heroMeta.setText("");
+            heroLogo.setVisibility(View.GONE);
+            heroProvider.setVisibility(View.GONE);
+            heroButton.setVisibility(View.GONE);
+            heroRemove.setVisibility(View.GONE);
+            // Update credit text when wallpaper changes (alpha stays as-is, controlled by heroFocused).
+            updateNatureCredit(it);
+            return;
+        }
+        // Hide nature credit when showing other content.
+        if (natureCredit != null) natureCredit.animate().alpha(0f).setDuration(200).start();
         if (removeSelected) selectRemove(false);
         heroRemove.setVisibility(!it.pkg.isEmpty() && shelfView.isFocused() ? View.VISIBLE : View.GONE);
         if (shelfView.isFocused()) {
@@ -1959,7 +2363,10 @@ public class MainActivity extends Activity {
         }
         next.setTranslationX(screenW * 0.12f * dir);
         next.setAlpha(0f);
-        next.animate().translationX(0).alpha(1f).setDuration(650).setInterpolator(EASE).start();
+        // Update glass widgets (weather, dock, search, time chip) on every animation frame so
+        // their blur source stays in sync with the crossfading hero backdrop.
+        next.animate().translationX(0).alpha(1f).setDuration(650).setInterpolator(EASE)
+                .setUpdateListener(an -> invalidateGlass()).start();
         old.animate().cancel();
         old.animate().translationX(-screenW * 0.06f * dir).alpha(0f).setDuration(650)
                 .setInterpolator(EASE).withEndAction(() -> old.setTranslationX(0)).start();
@@ -1969,6 +2376,7 @@ public class MainActivity extends Activity {
     boolean heroRequested;
 
     ImageView avatarView, ccButton, refreshButton, searchButton, netIcon;
+    LinearLayout timeChipView;
     /** The search screen while it is open (its layer is also pickerLayer, so Home and idle treat it as an overlay). */
     SearchPanel search;
     android.net.ConnectivityManager.NetworkCallback netCallback;
@@ -2004,10 +2412,16 @@ public class MainActivity extends Activity {
                     .setUpdateListener(null).withEndAction(this::invalidateGlass).start();
             heroInfo.animate().withLayer().translationY(0).setDuration(500).setInterpolator(EASE).start();
             heroDots.animate().withLayer().translationY(0).setDuration(500).setInterpolator(EASE).start();
-            heroOverview.setVisibility(View.VISIBLE);
-            heroButton.setVisibility(heroIsNews() ? View.GONE : View.VISIBLE);
-            heroRemove.setVisibility(heroIsContinue() ? View.VISIBLE : View.GONE);
+            boolean nature = !heroItems.isEmpty() && "nature".equals(heroItems.get(heroIndex).type);
+            heroOverview.setVisibility(nature ? View.GONE : View.VISIBLE);
+            heroButton.setVisibility(heroIsNews() || nature ? View.GONE : View.VISIBLE);
+            heroRemove.setVisibility(heroIsContinue() && !nature ? View.VISIBLE : View.GONE);
             heroRemove.setAlpha(1f);
+            // Show nature credit immediately on hero entry.
+            if (nature && !heroItems.isEmpty()) {
+                updateNatureCredit(heroItems.get(heroIndex));
+                if (natureCredit != null) natureCredit.animate().alpha(1f).setDuration(400).start();
+            }
             if (continueMode() && heroStrip.getChildCount() > 0) heroStrip.setVisibility(View.VISIBLE);
             heroOverview.animate().alpha(0.85f).setDuration(400).setStartDelay(120).start();
             heroButton.animate().alpha(1f).setDuration(400).setStartDelay(120).start();
@@ -2030,6 +2444,7 @@ public class MainActivity extends Activity {
             if (removeSelected) selectRemove(false);
             heroRemove.setVisibility(View.GONE);
             heroStrip.setVisibility(View.GONE);
+            if (natureCredit != null) natureCredit.animate().alpha(0f).setDuration(200).start();
             scheduleAdvance();
         }
     }
@@ -2126,7 +2541,7 @@ public class MainActivity extends Activity {
                 case KeyEvent.KEYCODE_DPAD_RIGHT:
                     // Past the last tab, Right continues to the status row (Control Center).
                     if (down) {
-                        if (continueMode()) ccButton.requestFocus();
+                        if (continueMode()) focusStatusRow();
                         else setShelfMode("continue");
                     }
                     return true;
@@ -2134,7 +2549,7 @@ public class MainActivity extends Activity {
                 case KeyEvent.KEYCODE_ENTER:
                     if (!down) setShelfMode(continueMode() ? "suggest" : "continue");
                     return true;
-                case KeyEvent.KEYCODE_DPAD_UP: if (down) ccButton.requestFocus(); return true;
+                case KeyEvent.KEYCODE_DPAD_UP: if (down) focusStatusRow(); return true;
                 case KeyEvent.KEYCODE_DPAD_DOWN:
                 case KeyEvent.KEYCODE_BACK:
                     if (down) {
@@ -2149,23 +2564,20 @@ public class MainActivity extends Activity {
                 default: return false;
             }
         }
-        if (f == refreshButton || f == searchButton || f == ccButton || f == avatarView) {
-            // Status row, left to right: Refresh, Search, Control Center, profile.
+        if (f == refreshButton || f == searchButton || f == ccButton || f == avatarView || f == timeChipView) {
+            // Status row: [Weather] [Search] [Time/CC chip]
             if (k == KeyEvent.KEYCODE_DPAD_LEFT) {
                 if (down) {
-                    if (f == avatarView) ccButton.requestFocus();
-                    else if (f == ccButton) searchButton.requestFocus();
-                    else if (f == searchButton) refreshButton.requestFocus();
-                    else if (switcher.getVisibility() == View.VISIBLE) switcher.requestFocus();
+                    if (f == timeChipView && searchButton.getVisibility() == View.VISIBLE) searchButton.requestFocus();
+                    else if (f == searchButton && refreshButton.getVisibility() == View.VISIBLE) refreshButton.requestFocus();
                     else if (weatherShown()) weatherCard.requestFocus();
                 }
                 return true;
             }
             if (k == KeyEvent.KEYCODE_DPAD_RIGHT) {
                 if (down) {
-                    if (f == refreshButton) searchButton.requestFocus();
-                    else if (f == searchButton) ccButton.requestFocus();
-                    else if (f == ccButton) avatarView.requestFocus();
+                    if (f == refreshButton && searchButton.getVisibility() == View.VISIBLE) searchButton.requestFocus();
+                    else if (f == searchButton && timeChipView != null) timeChipView.requestFocus();
                 }
                 return true;
             }
@@ -2177,7 +2589,12 @@ public class MainActivity extends Activity {
         }
         if (f == weatherCard) {
             switch (k) {
-                case KeyEvent.KEYCODE_DPAD_RIGHT: if (down) focusTop(); return true;
+                case KeyEvent.KEYCODE_DPAD_RIGHT:
+                    if (down) {
+                        if (searchButton.getVisibility() == View.VISIBLE) searchButton.requestFocus();
+                        else focusStatusRow();
+                    }
+                    return true;
                 case KeyEvent.KEYCODE_DPAD_DOWN:
                 case KeyEvent.KEYCODE_BACK:
                     if (down) {
@@ -2200,6 +2617,22 @@ public class MainActivity extends Activity {
                 || (k == KeyEvent.KEYCODE_DPAD_LEFT && i % COLS == 0))) {
             return true;
         }
+        // DOWN from a dock tile: jump to the Continue Watching row if it's showing.
+        if (k == KeyEvent.KEYCODE_DPAD_DOWN && i >= 0 && i < COLS && hasDock()) {
+            View cwTile = firstContinueTile();
+            if (cwTile != null) {
+                if (down) cwTile.requestFocus();
+                return true;
+            }
+        }
+        // UP from the first grid row (row below the dock): jump to Continue Watching.
+        if (k == KeyEvent.KEYCODE_DPAD_UP && i >= COLS && i < 2 * COLS && hasDock()) {
+            View cwTile = firstContinueTile();
+            if (cwTile != null) {
+                if (down) cwTile.requestFocus();
+                return true;
+            }
+        }
         if (k == KeyEvent.KEYCODE_DPAD_UP && i >= 0 && i < COLS && (hasDock() || i < COLS)) {
             if (down) {
                 if (heroActive) {
@@ -2211,11 +2644,90 @@ public class MainActivity extends Activity {
             }
             return true;
         }
+        // Continue Watching card navigation: UP goes to dock, DOWN goes to first grid tile,
+        // and RIGHT/LEFT past the ends stay within the row (don't leak to other rows).
+        if (f != null && continueCards != null && isContinueCard(f)) {
+            if (k == KeyEvent.KEYCODE_DPAD_UP) {
+                if (down) {
+                    View t = nearestDockTile(continueCardParent(f));
+                    if (t != null) t.requestFocus();
+                }
+                return true;
+            }
+            if (k == KeyEvent.KEYCODE_DPAD_DOWN) {
+                if (down) {
+                    View t = firstGridTileBelowDock();
+                    if (t != null) t.requestFocus();
+                }
+                return true;
+            }
+            if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                int idx = continueCardIndex(f);
+                int last = continueCards.getChildCount() - 1;
+                boolean atLeft = idx <= 0 && k == KeyEvent.KEYCODE_DPAD_LEFT;
+                boolean atRight = idx >= last && k == KeyEvent.KEYCODE_DPAD_RIGHT;
+                if (atLeft || atRight) return true;  // stop at ends; don't jump rows
+            }
+        }
         return false;
+    }
+
+    /** True if focus is on a Continue Watching card or on any app grid tile below it. */
+    boolean isContinueOrBelowDock(View f) {
+        if (f == null) return false;
+        if (isContinueCard(f)) return true;
+        int i = tiles.indexOf(f);
+        return i >= COLS;  // tiles below the dock (indices COLS and up)
+    }
+
+    boolean isContinueCard(View v) {
+        if (continueCards == null || v == null) return false;
+        for (int i = 0; i < continueCards.getChildCount(); i++) {
+            View c = continueCards.getChildAt(i);
+            if (c instanceof ViewGroup && ((ViewGroup) c).getChildAt(0) == v) return true;
+        }
+        return false;
+    }
+
+    View continueCardParent(View focused) {
+        if (continueCards == null) return focused;
+        for (int i = 0; i < continueCards.getChildCount(); i++) {
+            View c = continueCards.getChildAt(i);
+            if (c instanceof ViewGroup && ((ViewGroup) c).getChildAt(0) == focused) return c;
+        }
+        return focused;
+    }
+
+    int continueCardIndex(View focused) {
+        if (continueCards == null) return -1;
+        for (int i = 0; i < continueCards.getChildCount(); i++) {
+            View c = continueCards.getChildAt(i);
+            if (c instanceof ViewGroup && ((ViewGroup) c).getChildAt(0) == focused) return i;
+        }
+        return -1;
     }
 
     void openHeroItem(Suggestions.Item it) {
         if ("news".equals(it.type)) return;  // news is read on the shelf; there is nothing to open
+        // Watch Next items store the app's resume intent as a URI in link.
+        if ("watchnext".equals(it.type) && it.link != null && !it.link.isEmpty()) {
+            try {
+                Intent intent = Intent.parseUri(it.link, Intent.URI_INTENT_SCHEME);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                Suggestions.start(this, intent);
+                return;
+            } catch (Exception ignored) { }
+        }
+        // Netflix titles open via Google TV's global search (shows the Netflix button).
+        if ("netflix".equals(it.type)) {
+            Intent search = HumeMedia.searchIntent(it.title);
+            if (!Suggestions.start(this, search)) {
+                // Fallback: open Netflix directly.
+                Intent launch = getPackageManager().getLeanbackLaunchIntentForPackage("com.netflix.ninja");
+                if (launch != null) Suggestions.start(this, launch);
+            }
+            return;
+        }
         if (it.pkg.isEmpty()) {
             Suggestions.open(this, it);
             return;
@@ -2271,56 +2783,12 @@ public class MainActivity extends Activity {
             showInputs(tile);
             return;
         }
-
-        int[] loc = new int[2];
-        tile.getLocationInWindow(loc);
-        int[] rootLoc = new int[2];
-        root.getLocationInWindow(rootLoc);
-        float vx = loc[0] - rootLoc[0];
-        float vy = loc[1] - rootLoc[1];
-        float sx0 = tile.getWidth() * tile.getScaleX() / root.getWidth();
-        float sy0 = tile.getHeight() * tile.getScaleY() / root.getHeight();
-
-        // The card exactly as it looks on screen right now (scaled by focus/press).
-        RectF card = new RectF(vx, vy, vx + tile.getWidth() * tile.getScaleX(),
-                vy + tile.getHeight() * tile.getScaleY());
-        int startColor = a.banner != null ? edgeColor(a) : a.color;
-        int endColor = launchBackground(a, startColor);
-        LaunchCard art = new LaunchCard(card, radius * tile.getScaleX(),
-                a.banner != null ? bannerArt(a) : null, copyOf(a.icon), startColor,
-                // Icon apps fill with a flat colour, so they can hand off to the app's own colour.
-                a.banner == null && colorDistance(startColor, endColor) > 12 ? endColor : startColor);
-        View ov = new View(this);
-        ov.setBackground(art);
-        ov.setElevation(dp(24));
-        root.addView(ov, new FrameLayout.LayoutParams(root.getWidth(), root.getHeight()));
-        launchOverlay = ov;
-        launchTile = tile;
-        tile.setAlpha(0f);
-
-        ValueAnimator zoom = ValueAnimator.ofFloat(0f, 1f);
-        zoom.setDuration(480);
-        zoom.setInterpolator(EASE);
-        zoom.addUpdateListener(an -> art.setProgress((float) an.getAnimatedValue()));
-        zoom.start();
-
-        scroll.animate().withLayer().scaleX(0.9f).scaleY(0.9f).alpha(0f).setDuration(420).setInterpolator(EASE)
-                .setUpdateListener(null).start();
-        clockBox.animate().alpha(0f).setDuration(250).start();
-        switcher.animate().alpha(0f).setDuration(250).start();
-        weatherCard.animate().alpha(0f).setDuration(250).start();
-
-        handler.postDelayed(() -> {
-            try {
-                Bundle opts = ActivityOptions.makeCustomAnimation(
-                        this, R.anim.app_enter, R.anim.home_hold).toBundle();
-                startActivity(a.launch, opts);
-                noteLaunched(a.pkg);
-            } catch (ActivityNotFoundException | SecurityException e) {
-                toast("Can't open " + a.label);
-                finishLaunchReturn();
-            }
-        }, 380);
+        try {
+            startActivity(a.launch);
+            noteLaunched(a.pkg);
+        } catch (ActivityNotFoundException | SecurityException e) {
+            toast("Can't open " + a.label);
+        }
     }
 
     /** Coming back to Home after a launch: the card fades away and the grid zooms back in. */
@@ -2596,6 +3064,14 @@ public class MainActivity extends Activity {
                 : row == 0 ? shelfH
                 : shelfH + tileH + 2 * dockPadV + dockGapBelow() + (row - 1) * rowH;
         int target = row == 0 ? 0 : rowTop - (int) (screenH * 0.30f);
+        scroll.smoothScrollTo(0, Math.max(0, target));
+    }
+
+    /** Scrolls the home so the Continue Watching row rises up (same feel as a grid-row focus). */
+    void scrollToContinueRow() {
+        if (continueRow == null || continueRow.getVisibility() != View.VISIBLE) return;
+        int cwTop = shelfH + tileH + 2 * dockPadV + dockGapBelow();
+        int target = cwTop - (int) (screenH * 0.30f);
         scroll.smoothScrollTo(0, Math.max(0, target));
     }
 
@@ -3083,11 +3559,11 @@ public class MainActivity extends Activity {
     void showControlCenter() {
         dropPicker();
         stopSway(null);
-        popoverReturn = ccButton;
+        popoverReturn = timeChipView != null ? timeChipView : searchButton;
         FrameLayout layer = new FrameLayout(this);
         layer.setClickable(true);
         layer.setClipChildren(false);
-        addBlurredBackdrop(layer, 0x8C000000);
+        addBlurredBackdrop(layer, 0x66000000);
 
         int col = dp(141), gap = dp(13), cap = (col - gap) / 2, small = (2 * col + gap - 3 * gap) / 4;
         int w = 2 * col + gap;
@@ -3618,13 +4094,20 @@ public class MainActivity extends Activity {
 
     /** Android TV's system click on D-pad moves, select and Back (Settings -> Home -> Navigation sounds). */
     static void navSound(Context c, KeyEvent ev) {
-        if (ev.getAction() != KeyEvent.ACTION_DOWN) return;
-        switch (ev.getKeyCode()) {
+        if (ev.getAction() != KeyEvent.ACTION_DOWN || !Clicks.enabled(c)) return;
+        int k = ev.getKeyCode();
+        boolean dpad = k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN
+                || k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT;
+        if (Clicks.STYLE_HAVEN.equals(Clicks.style(c))) {
+            if (dpad) Clicks.tick(c);
+            return;
+        }
+        switch (k) {
             case KeyEvent.KEYCODE_DPAD_UP:
             case KeyEvent.KEYCODE_DPAD_DOWN:
             case KeyEvent.KEYCODE_DPAD_LEFT:
             case KeyEvent.KEYCODE_DPAD_RIGHT:
-                Clicks.move(c, ev.getKeyCode());
+                Clicks.move(c, k);
                 break;
             case KeyEvent.KEYCODE_DPAD_CENTER:
             case KeyEvent.KEYCODE_ENTER:
@@ -4069,7 +4552,8 @@ public class MainActivity extends Activity {
 
     boolean statusFocused() {
         View f = getCurrentFocus();
-        return f != null && (f == ccButton || f == avatarView || f == refreshButton || f == searchButton);
+        return f != null && (f == timeChipView || f == ccButton || f == avatarView
+                || f == refreshButton || f == searchButton);
     }
 
     /** Directional focus inside a popover: nearest cell whose centre lies in that direction. */

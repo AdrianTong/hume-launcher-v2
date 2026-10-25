@@ -16,7 +16,7 @@ import android.view.View;
  * and a 5-day list with temperature range bars coloured from cool blue to hot red.
  */
 final class WeatherView extends View {
-    static final float COMPACT_W = 214, COMPACT_H = 52, FULL_W = 380, FULL_H = 456;
+    static final float COMPACT_W = 260, COMPACT_H = 52, FULL_W = 380, FULL_H = 456;
 
     final boolean full;
     final float u;
