@@ -105,6 +105,73 @@ This makes the remote's Home button always open Hume instead of the stock Google
 
 ---
 
+## Changes from Original Hume Launcher
+
+This is a heavily modified fork. Below is a summary of what was added, changed, or removed compared to [petrobot-admin/hume-launcher](https://github.com/petrobot-admin/hume-launcher).
+
+### Wallpapers
+- **Added:** 50 bundled 4K landscape photos from Unsplash, each with location and photographer credit. The original used procedurally generated abstract gradient backgrounds.
+- **Added:** Rotating wallpaper carousel in hero mode — shuffled on launch, auto-advances every 30 seconds.
+- **Added:** Location + photographer credit overlay shown in hero mode, dims when navigating to the status bar, hides when the dock returns.
+- **Added:** First photo pre-decoded on the same background thread as the shuffle so the hero is never blank on launch.
+
+### Continue Watching
+- **Added:** A "Continue Watching" row inserted between the dock and the app grid, sourced from the system `TvContract.WatchNextPrograms` provider (the same data Google TV and Haven use). Requires `READ_TV_LISTINGS` permission granted via ADB.
+- **Added:** Each card shows a thumbnail, title, and translucent app badge (Netflix, Prime Video, etc.) in the bottom-right corner.
+- **Added:** Row is horizontally scrollable when more than 3 items are present.
+
+### Control Center
+The original CC had Do Not Disturb, Sleep Timer, Memory, and Search shortcuts. This version replaces them with more useful TV controls:
+
+| Original | v2 |
+|---|---|
+| Power Off | Power Off |
+| Volume | Restart *(new)* |
+| Wi-Fi | Wi-Fi |
+| Do Not Disturb | Volume |
+| Audio Output | Audio Output *(full width)* |
+| AirPlay | — *(removed)* |
+| Bluetooth | — *(removed)* |
+| Sleep Timer | — *(removed)* |
+| Inputs | — *(removed)* |
+| Search | — *(removed)* |
+| Hume Settings | Hume Settings |
+| TV Settings | TV Settings |
+| — | Accessibility *(new)* |
+
+- **Changed:** Inputs, Bluetooth, AirPlay, Do Not Disturb, Sleep Timer, and Search removed.
+- **Added:** Restart button (uses `DevicePolicyManager.reboot()`, requires device admin).
+- **Added:** Accessibility shortcut.
+- **Changed:** Audio Output tile spans full width.
+
+### Status Bar
+- **Changed:** Time and Wi-Fi status combined into a single pill chip (right of the search button) that opens Control Center on press. The original had a separate CC button.
+- **Removed:** Avatar/profile button, refresh button (hidden).
+- **Changed:** App labels in the grid are smaller (10sp, 82% width) and only visible when the tile is focused.
+
+### Focus Glare Animation
+- **Changed:** The tile focus glare automatically selects dark or white based on the icon's background luminance — white glare on dark icons, dark glare on light-background icons (Netflix, YouTube, ESPN, etc.). Banner images are sampled separately from icon colors.
+- **Added:** The same glare animation is applied to Continue Watching thumbnails.
+
+### Navigation & State
+- **Added:** `HomeKeyService` AccessibilityService intercepts the Home key so it always opens Hume on Google TV, which otherwise routes Home to its own launcher regardless of the default home setting.
+- **Added:** Foreground app tracking so the Home key passes through to the Google TV launcher when the user intentionally launches it, rather than immediately redirecting back.
+- **Added:** State restoration — when returning from any app via Home, focus and scroll position are restored to exactly where you were.
+- **Fixed:** Hero wallpaper stays expanded when navigating from the shelf to the status bar (weather, search, time chip). In the original, any focus change away from the shelf would collapse the dock.
+- **Fixed:** Pressing Home while the hero is expanded (from the status bar) collapses it and brings the dock back into view rather than silently consuming the key.
+- **Added:** Grid UP/DOWN navigation uses a custom EASE interpolator at 320ms, matching the feel of the hero animations.
+
+### Launch Animations
+- **Removed:** App launch zoom animation (card expanding to fill screen). Apps open instantly.
+
+### Google TV Shortcut
+- **Added:** A "Google TV" tile in the app grid that launches the stock Google TV launcher directly, for cases where you want to access Google TV's For You recommendations or app store.
+
+### Deploy Script
+- **Added:** `deploy.sh` — single command to build, install, grant all required permissions (`READ_TV_LISTINGS`, TCL `AUTO_START`), and re-enable the accessibility service. The original had no install automation.
+
+---
+
 ## Known Issues
 
 ### Home Button & Accessibility Service
