@@ -220,7 +220,7 @@ public class MainActivity extends Activity {
         // Startup: the app list (package manager, banners, icon colours) and the wallpaper are
         // prepared in the background while the window's views are built (~250 ms saved on 1 GHz TVs).
         java.util.concurrent.Future<?> appsTask = io.submit(this::loadApps);
-        String wall = prefs.getString("wallpaper", "aurora");
+        String wall = prefs.getString("wallpaper", "graphite");
         wallPrefetch = new java.util.concurrent.FutureTask<>(() -> makeWallpaper(wall));
         wallPrefetchStyle = wall;
         new Thread((Runnable) wallPrefetch, "hume-wallpaper").start();
@@ -334,7 +334,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         resumed = true;
-        String ws = Profiles.homePrefs(this).getString("wallpaper", "aurora");
+        String ws = Profiles.homePrefs(this).getString("wallpaper", "graphite");
         if (!ws.equals(wallStyle)) {
             wallStyle = ws;
             setWallpaper(ws);
@@ -405,7 +405,7 @@ public class MainActivity extends Activity {
         // soft; a slow drift keeps it alive without a per-frame blur on this weak GPU.
         wallView = new ImageView(this);
         wallView.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        wallStyle = Profiles.homePrefs(this).getString("wallpaper", "aurora");
+        wallStyle = Profiles.homePrefs(this).getString("wallpaper", "graphite");
         setWallpaper(wallStyle);
         root.addView(wallView, match());
 
@@ -4922,7 +4922,7 @@ public class MainActivity extends Activity {
         Profiles.setCurrent(this, id);
         prefs = Profiles.homePrefs(this);
         refreshAvatar();
-        wallStyle = prefs.getString("wallpaper", "aurora");
+        wallStyle = prefs.getString("wallpaper", "graphite");
         setWallpaper(wallStyle);
         folderMode = false;
         moveIndex = -1;
