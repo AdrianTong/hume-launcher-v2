@@ -346,14 +346,23 @@ final class Glyphs {
                 c.drawRect(r, dot);
                 break;
             }
-            case "refresh": {  // circular arrow
+            case "refresh": {  // circular arrow — arc from -60° clockwise 300°, ends at 240°
                 r.set(s * 0.2f, s * 0.2f, s * 0.8f, s * 0.8f);
                 c.drawArc(r, -60, 300, false, p);
-                float ax = m + s * 0.3f * (float) Math.cos(Math.toRadians(-60)), ay = m + s * 0.3f * (float) Math.sin(Math.toRadians(-60));
-                path.moveTo(ax - s * 0.16f, ay - s * 0.04f);
-                path.lineTo(ax, ay);
-                path.lineTo(ax - s * 0.02f, ay + s * 0.16f);
+                // Arrowhead at the END of the arc (240° canvas coords = upper-left).
+                // Clockwise tangent at 240° points at -30° from x-axis (upper-right).
+                // Rotate canvas so "up" aligns with the tangent, then draw a simple V.
+                float rad = s * 0.3f;
+                float ex = m + rad * (float) Math.cos(Math.toRadians(240));
+                float ey = m + rad * (float) Math.sin(Math.toRadians(240));
+                c.save();
+                c.translate(ex, ey);
+                c.rotate(60);  // 60° CW rotates "up" to the clockwise tangent at 240°
+                path.moveTo(-s * 0.10f, s * 0.13f);
+                path.lineTo(0, 0);
+                path.lineTo(s * 0.10f, s * 0.13f);
                 c.drawPath(path, p);
+                c.restore();
                 break;
             }
             case "search":

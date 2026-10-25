@@ -2524,7 +2524,7 @@ public class MainActivity extends Activity {
             if (continueMode() && heroStrip.getChildCount() > 0) heroStrip.setVisibility(View.VISIBLE);
             heroOverview.animate().alpha(0.85f).setDuration(400).setStartDelay(120).start();
             heroButton.animate().alpha(1f).setDuration(400).setStartDelay(120).start();
-            handler.removeCallbacks(heroAdvance);
+            scheduleAdvance();  // keep cycling wallpapers while shelf is focused
         } else {
             // Defer by one message-queue cycle so focus has fully settled before we decide
             // whether to collapse the hero (the focus-change callback fires while the old view
@@ -4306,8 +4306,6 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------- idle full-screen carousel
 
     boolean idle, swallowUp;
-    float idleScrollY, idleInfoY, idleDotsY;
-    boolean idleOverviewShown;
 
     /** Seconds without input before the dock slides away (Settings -> Home); 0 = never. */
     int idleSeconds() {
@@ -4336,43 +4334,17 @@ public class MainActivity extends Activity {
             return;
         }
         idle = true;
-        idleScrollY = scroll.getTranslationY();
-        idleInfoY = heroInfo.getTranslationY();
-        idleDotsY = heroDots.getTranslationY();
-        idleOverviewShown = heroOverview.getVisibility() == View.VISIBLE;
-        scroll.animate().cancel();
-        scroll.animate().withLayer().translationY(screenH).alpha(0f).setDuration(900).setInterpolator(EASE)
-                .setUpdateListener(null).start();
-        heroInfo.animate().withLayer().translationY(0).setDuration(900).setInterpolator(EASE).start();
-        heroDots.animate().withLayer().translationY(dp(4)).setDuration(900).setInterpolator(EASE).start();
-        weatherCard.animate().alpha(0f).setDuration(500).start();
-        switcher.animate().alpha(0f).setDuration(500).start();
-        heroButton.animate().alpha(0f).setDuration(300).start();
-        heroOverview.animate().cancel();
-        heroOverview.setVisibility(heroOverview.getText().length() > 0 ? View.VISIBLE : View.GONE);
-        heroOverview.animate().alpha(0.85f).setDuration(600).start();
-        handler.removeCallbacks(heroAdvance);
-        scheduleAdvance();
+        // Idle = hero mode: focus the shelf so heroFocused(true) handles all the animations
+        // (dock slides, weather stays, credit shows, auto-advance continues). Consistent and simple.
+        heroRequested = true;
+        shelfView.requestFocus();
     }
 
     void exitIdle() {
         if (!idle) return;
         idle = false;
-        scroll.animate().cancel();
-        scroll.animate().withLayer().translationY(idleScrollY).alpha(1f).setDuration(450).setInterpolator(EASE)
-                .setUpdateListener(null).withEndAction(this::invalidateGlass).start();
-        heroInfo.animate().withLayer().translationY(idleInfoY).setDuration(450).setInterpolator(EASE).start();
-        heroDots.animate().withLayer().translationY(idleDotsY).setDuration(450).setInterpolator(EASE).start();
-        weatherCard.animate().alpha(weatherAlpha()).setDuration(350).start();
-        switcher.animate().alpha(folderMode ? 0f : clockAlpha()).setDuration(350).start();
-        if (shelfView.isFocused()) {
-            heroButton.animate().alpha(1f).setDuration(300).start();
-            handler.removeCallbacks(heroAdvance);  // browsing by hand: no auto-advance
-        }
-        if (!idleOverviewShown && !heroIsNews()) {
-            heroOverview.animate().alpha(0f).setDuration(200)
-                    .withEndAction(() -> heroOverview.setVisibility(View.GONE)).start();
-        }
+        // Return focus to the dock, which collapses the hero via heroFocused(false).
+        focusIndex(Math.min(focusedIndex, COLS - 1));
         resetIdle();
     }
 
