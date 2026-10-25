@@ -1,68 +1,115 @@
-# Hume Launcher
+# Hume Launcher v2
 
-A tvOS 26–style home screen for Android TV, by Petrobot. It replaces the stock launcher with one
-modelled on Apple TV — glass dock, full-screen carousel, Control Center, profiles — and is built to
-stay smooth on low-end TV boxes like the Xiaomi Mi Box. Plain Java, no Gradle, no third-party
-runtime libraries; the APK is about 1 MB.
+A tvOS-inspired home screen for Android TV and Google TV, built on top of [Hume Launcher](https://github.com/petrobot-admin/hume-launcher) by Petrobot. Designed and customized for TCL Google TV (QM6K series) but works on any Android TV device.
 
-![Home screen](docs/images/home-dock-glass.jpg)
+---
+
+## Screenshots
+
+### Home — Dock View
+![Dock](screenshots/dock.png)
+
+### Hero Mode — Full-screen Wallpaper
+![Hero](screenshots/hero.png)
+
+### Control Center
+![Control Center](screenshots/control-center.png)
+
+### Weather
+![Weather](screenshots/weather.png)
+
+### Continue Watching + App Grid
+![Continue Watching](screenshots/continue-watching.png)
+
+### App Grid
+![App Grid](screenshots/app-grid.png)
+
+---
 
 ## Features
 
-- **Home**: Liquid Glass dock, 6-across app grid in Apple's measured proportions, focus lift and
-  zoom-to-open, More Apps folder, five backgrounds.
-- **Carousel**: Continue Watching first (Resume / Remove, expires after 7 days), then Indian news
-  (India, your city, world) and rotating recommendations from your streaming services. Goes full
-  screen when Home is idle.
-- **Status row**: internet indicator, time, Refresh, Search, Control Center, profile avatar.
-- **Search**: apps, settings and inputs instantly, plus movies and shows on every streaming service
-  in India (Indian titles included, typed in English or Hindi, or spoken) with **Open** in the app
-  you have or **Get** for the one you don't.
-- **Weather**: a glass pill with a 5-day forecast panel (Open-Meteo, MET Norway or wttr.in — no keys).
-- **Control Center**: Power Off, Memory/Clean, Wi-Fi, Do Not Disturb, audio, sleep timer, inputs,
-  settings, search.
-- **Profiles**: up to 3, each with its own layout, background and carousel; full-screen switcher.
-- **Inputs**: HDMI/AV/TV picker with connector icons, on TVs that have inputs.
-- **Presentation mode**: send images, videos and webpages from a browser and loop them full screen;
-  can start with the TV (signage).
-- **First-time setup** in Apple's style, **multi-page Settings**, permissions asked **on screen**
-  (adb only as a last resort), system or carousel **screensaver**, and Android TV navigation sounds.
-- **AirPlay**: works with the open-source [AirPlay Server](https://github.com/jqssun/android-airplay-server)
-  app; Hume keeps the receiver visible to Macs and iPhones after the TV sleeps.
+- **50 bundled 4K landscape wallpapers** — shuffled on launch, auto-advances every 30 seconds. Location and photographer credited in hero mode.
+- **tvOS-style dock** — frosted glass, app icons with glare animation on focus. Light/dark glare automatically selected based on icon background.
+- **Continue Watching row** — populated from the system TV provider (Netflix, Prime Video, etc.) with app badge and thumbnail.
+- **Live weather widget** — current conditions, hourly and 5-day forecast via Open-Meteo.
+- **Control Center** — Power Off, Restart, Wi-Fi, Volume, Audio Output, and shortcuts to Hume Settings, TV Settings, and Accessibility.
+- **Home button override** — AccessibilityService intercepts the Home key on Google TV so it always opens Hume instead of the stock launcher.
+- **State restoration** — returns to the exact app you were focused on when pressing Home from another app.
+- **Liquid Glass UI** — adaptive frosted glass on the dock, weather card, search, and time/control chip.
 
-Full list with screenshots: **[docs/features.md](docs/features.md)**.
-
-## Quick start
-
-```sh
-# needs JDK 17+ and Android SDK build-tools 34.0.0 + platform android-34 (see getting started)
-./build.sh                                   # → build/tvos-home.apk
-adb connect <tv-ip>:5555
-adb install -r build/tvos-home.apk
-adb shell am start -n com.petrobot.hume/.MainActivity
-```
-
-## Documentation
-
-| | |
-|---|---|
-| **[Getting started](docs/getting-started.md)** | Install the tools, build, run on a TV or the emulator, developer shortcuts |
-| **[Features](docs/features.md)** | Everything Hume does, by area |
-| **[Install and set up](docs/install.md)** | Make it the home screen, permissions, undo |
-| **[Presentation mode](docs/presentation.md)** | Sending content from a browser, the player, the web API |
-| **[Architecture](docs/architecture.md)** | Code map, build, design decisions, performance |
-| **[Contributing](CONTRIBUTING.md)** | Workflow, code style, design and performance rules, testing, pull requests |
+---
 
 ## Requirements
 
-Android TV 7.0+ (API 24). Developed and tested on a Xiaomi Mi Box 4 (Android 12) and an Android 9
-TV with 1 GB RAM.
+- Android TV or Google TV device (tested on TCL 65" QM6K)
+- ADB enabled (Developer Options → Network Debugging)
+- macOS/Linux build machine with:
+  - JDK 17+ (`brew install openjdk@17`)
+  - Android SDK build-tools 34.0.0 and platform android-34:
+    ```bash
+    brew install android-commandlinetools
+    sdkmanager "build-tools;34.0.0" "platforms;android-34"
+    ```
 
-## License
+---
 
-Apache License 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE).
+## Installation
+
+### 1. Clone
+
+```bash
+git clone https://github.com/AdrianTong/hume-launcher-v2.git
+cd hume-launcher-v2
+```
+
+### 2. Connect your TV via ADB
+
+Enable **Developer Options → Network Debugging** on your TV, then pair:
+
+```bash
+adb pair <tv-ip>:<pair-port>
+adb connect <tv-ip>:<connect-port>
+adb devices  # confirm device appears
+```
+
+### 3. Build and deploy
+
+```bash
+VERSION_CODE=1 VERSION_NAME=1.0 bash deploy.sh <adb-serial>
+```
+
+`deploy.sh` builds the APK, installs it, grants `READ_TV_LISTINGS` for Continue Watching, grants the TCL auto-start permission, and re-enables the HomeKeyService accessibility service automatically.
+
+> Find your ADB serial with `adb devices`.
+
+### 4. Set as default home (optional but recommended)
+
+```bash
+adb -s <serial> shell cmd package set-home-activity com.petrobot.hume/.MainActivity
+```
+
+### 5. Enable Home button override (optional)
+
+On the TV: **Hume Settings → Permissions → Home button override → Open Accessibility Settings**, then enable **Hume Launcher – Home Button**.
+
+This makes the remote's Home button always open Hume instead of the stock Google TV launcher. The `deploy.sh` script re-enables this automatically on each reinstall.
+
+---
+
+## Updating
+
+Re-run `deploy.sh` with an incremented `VERSION_CODE`:
+
+```bash
+VERSION_CODE=2 VERSION_NAME=1.1 bash deploy.sh <adb-serial>
+```
+
+---
 
 ## Credits
 
-Inter font (SIL OFL) · Nayuki QR Code generator (MIT) · weather from Open-Meteo, MET Norway and
-wttr.in · recommendations from JustWatch / TMDB / Stremio Cinemeta · news from Indian newsrooms' public RSS feeds.
+- Original [Hume Launcher](https://github.com/petrobot-admin/hume-launcher) by Petrobot — Apache 2.0
+- Wallpapers from [Unsplash](https://unsplash.com) — see `src/com/petrobot/hume/Nature.java` for individual credits
+- Weather data from [Open-Meteo](https://open-meteo.com)
+
+Licensed under the [Apache License 2.0](LICENSE).

@@ -342,14 +342,16 @@ public class MainActivity extends Activity {
             wallStyle = ws;
             setWallpaper(ws);
         }
-        if (returningFromSettings && !folderMode && launchOverlay == null && moveIndex < 0) reload(currentKey());
+        boolean fromSettings = returningFromSettings && !folderMode && launchOverlay == null && moveIndex < 0;
+        if (fromSettings) reload(currentKey());
         returningFromSettings = false;
         loadHero();
         if (launchOverlay != null) {
             finishLaunchReturn();
-        } else if (tiles != null && !tiles.isEmpty()) {
+        } else if (!fromSettings && tiles != null && !tiles.isEmpty()) {
             // Restore focus and scroll after returning from an app. Deferred so async
             // setHeroItems settles before we re-request focus.
+            // Skipped when returning from Settings — reload() already placed focus correctly.
             handler.postDelayed(() -> {
                 if (isDestroyed() || isFinishing() || pickerLayer != null) return;
                 focusIndex(Math.min(resumeToIndex, tiles.size() - 1));
@@ -508,10 +510,11 @@ public class MainActivity extends Activity {
         clockBox.setGravity(Gravity.CENTER_VERTICAL);
         clockBox.setClipChildren(false);
         TextClock time = new TextClock(this);
+        time.setBackground(null);  // clear theme-injected background so it blends into LiquidGlass
         Ui.textSize(time, 16);
         time.setTypeface(Ui.font(this, "medium"));
         time.setTextColor(Color.WHITE);
-        time.setShadowLayer(dp(6), 0, dp(1), 0x66000000);
+        time.setShadowLayer(0, 0, 0, 0);
         time.setFormat12Hour("h:mm a");
         time.setFormat24Hour("H:mm");
         time.setAllCaps(true);
@@ -530,7 +533,7 @@ public class MainActivity extends Activity {
         GradientDrawable chipLit = new GradientDrawable();
         chipLit.setCornerRadius(btn / 2f);
         chipLit.setColor(Color.WHITE);
-        time.setShadowLayer(dp(8), 0, dp(1), 0x99000000);
+        
         timeChip.addView(netIcon, nlp);
         timeChip.addView(time);
         timeChip.setFocusable(true);
@@ -2200,6 +2203,7 @@ public class MainActivity extends Activity {
         heroDots.animate().alpha(a).setDuration(350).start();
         chevron.animate().alpha(1f - a).setDuration(350).start();
         heroBack.animate().alpha(0f).setDuration(450).start();
+        if (!show && natureCredit != null) natureCredit.animate().alpha(0f).setDuration(200).start();
         handler.removeCallbacks(heroAdvance);
         if (show) scheduleAdvance();
     }
@@ -3181,13 +3185,22 @@ public class MainActivity extends Activity {
      * Row tops come from the fixed grid geometry rather than getTop(), so this also works right
      * after buildGrid() (e.g. while moving a card), before the new rows have been laid out.
      */
+    android.animation.ValueAnimator scrollAnim;
+
     void scrollToRow(int row) {
         int rowH = tileH + labelH + gap / 2;
         int rowTop = !hasDock() ? shelfH + row * rowH
                 : row == 0 ? shelfH
                 : shelfH + tileH + 2 * dockPadV + dockGapBelow() + (row - 1) * rowH;
-        int target = row == 0 ? 0 : rowTop - (int) (screenH * 0.30f);
-        scroll.smoothScrollTo(0, Math.max(0, target));
+        int target = Math.max(0, row == 0 ? 0 : rowTop - (int) (screenH * 0.30f));
+        int from = scroll.getScrollY();
+        if (from == target) return;
+        if (scrollAnim != null) scrollAnim.cancel();
+        scrollAnim = android.animation.ValueAnimator.ofInt(from, target);
+        scrollAnim.setDuration(320);
+        scrollAnim.setInterpolator(EASE);
+        scrollAnim.addUpdateListener(a -> scroll.scrollTo(0, (int) a.getAnimatedValue()));
+        scrollAnim.start();
     }
 
     /** Scrolls the home so the Continue Watching row rises up (same feel as a grid-row focus). */
@@ -3218,6 +3231,15 @@ public class MainActivity extends Activity {
     }
 
     void goTop() {
+        // If the hero was expanded (scroll translated down), slide it back so the dock is visible.
+        if (scroll.getTranslationY() != 0) {
+            scroll.animate().withLayer().translationY(0).setDuration(350).setInterpolator(EASE)
+                    .setUpdateListener(null).withEndAction(this::invalidateGlass).start();
+            heroInfo.animate().withLayer().translationY(heroInfoRestY()).setDuration(350).setInterpolator(EASE).start();
+            heroDots.animate().withLayer().translationY(heroDotsRestY()).setDuration(350).setInterpolator(EASE).start();
+        }
+        // goTop always lands on the dock, never the shelf — hide credit regardless.
+        if (natureCredit != null) natureCredit.animate().alpha(0f).setDuration(200).start();
         scroll.smoothScrollTo(0, 0);
         focusIndex(0);
     }
@@ -3699,11 +3721,24 @@ public class MainActivity extends Activity {
         panel.setClipChildren(false);
         List<View> cells = new ArrayList<>();
 
-        // Row 1: Power Off | Volume / Mute
+        // Row 1: Power Off | Restart
         cells.add(ccTile(panel, 0, 0, col, cap, "power", "Power Off", null, false, v -> {
             if (!SleepReceiver.sleepNow(this)) Perms.requestAdmin(this);
         }));
-        cells.add(ccTile(panel, col + gap, 0, col, cap, isMuted() ? "mute" : "volume",
+        cells.add(ccTile(panel, col + gap, 0, col, cap, "refresh", "Restart", null, false, v -> {
+            android.app.admin.DevicePolicyManager dpm =
+                    getSystemService(android.app.admin.DevicePolicyManager.class);
+            if (dpm != null && dpm.isAdminActive(SleepReceiver.admin(this))) {
+                dpm.reboot(SleepReceiver.admin(this));
+            } else {
+                Perms.requestAdmin(this);
+            }
+            closeProfilePicker();
+        }));
+        // Row 2: Wi-Fi | Volume / Mute
+        cells.add(ccTile(panel, 0, cap + gap, col, cap, "wifi", "Wi-Fi", this::wifiName, false,
+                v -> Suggestions.start(this, new Intent(Settings.ACTION_WIFI_SETTINGS))));
+        cells.add(ccTile(panel, col + gap, cap + gap, col, cap, isMuted() ? "mute" : "volume",
                 "Volume", this::volumeState, false, v -> {
                     android.media.AudioManager am = getSystemService(android.media.AudioManager.class);
                     if (am != null) am.adjustStreamVolume(android.media.AudioManager.STREAM_MUSIC,
@@ -3711,33 +3746,16 @@ public class MainActivity extends Activity {
                             android.media.AudioManager.FLAG_SHOW_UI);
                     closeProfilePicker();
                 }));
-        // Row 2: Wi-Fi | Bluetooth
-        cells.add(ccTile(panel, 0, cap + gap, col, cap, "wifi", "Wi-Fi", this::wifiName, false,
-                v -> Suggestions.start(this, new Intent(Settings.ACTION_WIFI_SETTINGS))));
-        cells.add(ccTile(panel, col + gap, cap + gap, col, cap, "bluetooth", "Bluetooth", null, false,
-                v -> Suggestions.start(this, new Intent(Settings.ACTION_BLUETOOTH_SETTINGS))));
-        // Row 3: Audio Output | AirPlay
+        // Row 3: Audio Output (full width)
         int y3 = 2 * (cap + gap);
-        cells.add(ccTile(panel, 0, y3, col, cap, "audio", "Audio Output", this::audioOutput, false,
+        cells.add(ccTile(panel, 0, y3, w, cap, "audio", "Audio Output", this::audioOutput, false,
                 v -> Suggestions.start(this, new Intent("android.settings.SOUND_SETTINGS"))));
-        cells.add(ccTile(panel, col + gap, y3, col, cap, "airplay", "AirPlay", null, false, v -> {
-            // TCL AirPlay has no launcher activity \u2014 trigger via broadcast, then open Network settings
-            // where AirPlay & HomeKit appear on TCL Google TVs.
-            try { sendBroadcast(new Intent("Show.Settings.AirplayAPK")); } catch (Exception ignored) { }
-            Intent network = new Intent().setClassName(
-                    "com.android.tv.settings", "com.android.tv.settings.connectivity.NetworkActivity");
-            try { Suggestions.start(this, network); } catch (Exception e) {
-                Suggestions.start(this, new Intent(Settings.ACTION_SETTINGS));
-            }
-            closeProfilePicker();
-        }));
-        // Row 4: round shortcuts \u2014 Hume Settings, TV Settings (centred in the 2-col layout).
+        // Row 4: round shortcuts — Hume Settings | TV Settings | Accessibility
         int y4 = y3 + cap + gap;
-        String[] g = {"house", "gear"};
-        int startX = small + gap;
+        String[] g = {"house", "gear", "accessibility"};
         for (int i = 0; i < g.length; i++) {
             String name = g[i];
-            cells.add(ccTile(panel, startX + i * (small + gap), y4, small, small, name, null, null, false, v -> {
+            cells.add(ccTile(panel, i * (small + gap), y4, small, small, name, null, null, false, v -> {
                 switch (name) {
                     case "house":
                         returningFromSettings = true;
@@ -3745,6 +3763,9 @@ public class MainActivity extends Activity {
                         break;
                     case "gear":
                         Suggestions.start(this, new Intent(Settings.ACTION_SETTINGS));
+                        break;
+                    case "accessibility":
+                        Suggestions.start(this, new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
                         break;
                 }
                 closeProfilePicker();
