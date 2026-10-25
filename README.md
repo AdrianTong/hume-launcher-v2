@@ -39,9 +39,18 @@ A tvOS-inspired home screen for Android TV and Google TV, built on top of [Hume 
 
 ---
 
+## Tested On
+
+**TCL 65" QM6K Series** — QLED Mini LED 4K HDR Smart Google TV (65QM6K), 144Hz  
+Android 14 (API 34)
+
+This launcher should work on any Android TV or Google TV device running Android 8.0+, but all development and testing was done on the above hardware.
+
+---
+
 ## Requirements
 
-- Android TV or Google TV device (tested on TCL 65" QM6K)
+- Android TV or Google TV device
 - ADB enabled (Developer Options → Network Debugging)
 - macOS/Linux build machine with:
   - JDK 17+ (`brew install openjdk@17`)
@@ -93,6 +102,26 @@ adb -s <serial> shell cmd package set-home-activity com.petrobot.hume/.MainActiv
 On the TV: **Hume Settings → Permissions → Home button override → Open Accessibility Settings**, then enable **Hume Launcher – Home Button**.
 
 This makes the remote's Home button always open Hume instead of the stock Google TV launcher. The `deploy.sh` script re-enables this automatically on each reinstall.
+
+---
+
+## Known Issues
+
+### Home Button & Accessibility Service
+
+Google TV intercepts the Home key at the system level and routes it to its own launcher, bypassing Android's standard default-home mechanism. Hume works around this using an `AccessibilityService` (`HomeKeyService`) that captures `KEYCODE_HOME` globally and redirects it to Hume.
+
+**TCL-specific:** TCL's `TclAppBoot` system blocks third-party services from auto-starting without explicit permission. If you enable the accessibility service and it immediately flips back off, run:
+
+```bash
+adb -s <serial> shell appops set com.petrobot.hume AUTO_START allow
+```
+
+`deploy.sh` does this automatically, but if you enable the service manually through TV Settings it may need to be re-granted.
+
+**On reinstall:** Android automatically disables accessibility services when an app is reinstalled as a security measure. `deploy.sh` re-enables it after every install. If you install manually (without `deploy.sh`), re-enable it in TV Settings → Accessibility.
+
+**Google TV shortcut tile:** A "Google TV" tile is included in the app grid that launches the stock Google TV launcher directly. While in the Google TV launcher, the Home button passes through normally (does not redirect to Hume) so you can navigate Google TV freely. Pressing Home from any other app still returns to Hume.
 
 ---
 
