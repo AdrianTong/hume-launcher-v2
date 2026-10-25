@@ -510,7 +510,6 @@ public class MainActivity extends Activity {
         clockBox.setGravity(Gravity.CENTER_VERTICAL);
         clockBox.setClipChildren(false);
         TextClock time = new TextClock(this);
-        time.setBackground(null);  // clear theme-injected background so it blends into LiquidGlass
         Ui.textSize(time, 16);
         time.setTypeface(Ui.font(this, "medium"));
         time.setTextColor(Color.WHITE);
@@ -527,7 +526,7 @@ public class MainActivity extends Activity {
         timeChip.setOrientation(LinearLayout.HORIZONTAL);
         timeChip.setGravity(Gravity.CENTER_VERTICAL);
         timeChip.setPadding(dp(12), 0, dp(14), 0);
-        LiquidGlass chipGlass = new LiquidGlass(btn / 2f, 0x1F000000, glassSource, screenW, screenH, unit).adaptive();
+        LiquidGlass chipGlass = new LiquidGlass(btn / 2f, 0x3A000000, glassSource, screenW, screenH, unit).adaptive();
         chipGlass.lens = dp(4);
         timeChip.setBackground(chipGlass);
         GradientDrawable chipLit = new GradientDrawable();
@@ -575,7 +574,7 @@ public class MainActivity extends Activity {
         searchButton = new ImageView(this);
         searchButton.setScaleType(ImageView.ScaleType.CENTER);
         searchButton.setImageBitmap(Glyphs.get("search", dp(20), Color.WHITE));
-        LiquidGlass seGlass = new LiquidGlass(btn / 2f, 0x1F000000, glassSource, screenW, screenH, unit).adaptive();
+        LiquidGlass seGlass = new LiquidGlass(btn / 2f, 0x3A000000, glassSource, screenW, screenH, unit).adaptive();
         seGlass.lens = dp(4);
         searchButton.setBackground(seGlass);
         searchButton.setFocusable(true);
