@@ -7,12 +7,14 @@ import android.view.accessibility.AccessibilityEvent;
 
 /**
  * Google TV sends the Home key directly to its own launcher, ignoring the default home app.
- * This service catches Home from the remote and opens Hume, and also opens Hume whenever
- * Google TV's home screen appears some other way. Enable it via Settings -> Permissions ->
- * Home button override -> Open Accessibility Settings.
+ * This service catches Home from the remote and opens Hume, and also redirects to Hume on
+ * boot (before the user has interacted with Hume at all in this session).
  *
- * Packages in PASSTHROUGH are allowed to handle Home themselves (e.g. Google TV launcher
- * so the user can navigate within it after using the GTV shortcut tile).
+ * Boot redirect: Google TV is a system app that wins the home resolver race. We detect its
+ * HomeActivity appearing while Hume hasn't been shown yet (firstBootLaunch=true) and redirect
+ * immediately. Once Hume shows once, firstBootLaunch=false so the GTV shortcut tile works.
+ *
+ * Packages in PASSTHROUGH are allowed to handle Home themselves after firstBootLaunch is false.
  */
 public class HomeKeyService extends AccessibilityService {
 
@@ -23,6 +25,9 @@ public class HomeKeyService extends AccessibilityService {
         GOOGLE_TV_HOME,
     };
 
+    /** True until Hume has been shown at least once this session. Cleared in MainActivity.onResume(). */
+    static boolean firstBootLaunch = true;
+
     /** Package of the window most recently brought to the foreground (via accessibility events). */
     private String currentPkg = "";
 
@@ -30,7 +35,6 @@ public class HomeKeyService extends AccessibilityService {
         if (e.getKeyCode() != KeyEvent.KEYCODE_HOME) return false;
         if (e.getAction() == KeyEvent.ACTION_UP && e.getRepeatCount() == 0) {
             if (MainActivity.resumed) {
-                // Already in Hume: handle in-app (close overlays, go to top if nothing open).
                 MainActivity inst = MainActivity.instance;
                 if (inst != null) inst.handleHomeKey();
             } else if (!isPassthrough(currentPkg)) {
@@ -41,6 +45,7 @@ public class HomeKeyService extends AccessibilityService {
     }
 
     private boolean isPassthrough(String pkg) {
+        if (firstBootLaunch) return false;  // never passthrough before Hume has loaded once
         for (String p : PASSTHROUGH) if (p.equals(pkg)) return true;
         return false;
     }
@@ -49,6 +54,14 @@ public class HomeKeyService extends AccessibilityService {
         if (ev.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             CharSequence pkg = ev.getPackageName();
             if (pkg != null) currentPkg = pkg.toString();
+            // On boot: if GTV's home appears before Hume has ever shown, redirect to Hume.
+            // After Hume shows once (firstBootLaunch=false), GTV is allowed (shortcut tile).
+            if (firstBootLaunch
+                    && GOOGLE_TV_HOME.equals(currentPkg)
+                    && String.valueOf(ev.getClassName()).endsWith("HomeActivity")
+                    && !MainActivity.resumed) {
+                openHume();
+            }
         }
     }
 
@@ -56,9 +69,6 @@ public class HomeKeyService extends AccessibilityService {
 
     private void openHume() {
         try {
-            // FLAG_ACTIVITY_SINGLE_TOP: reuse the existing MainActivity instance (calls
-            // onNewIntent → onResume) rather than clearing/resetting the task, which would
-            // lose the focused tile and scroll position.
             startActivity(new Intent(Intent.ACTION_MAIN)
                     .addCategory(Intent.CATEGORY_HOME)
                     .setClass(this, MainActivity.class)

@@ -337,6 +337,7 @@ public class MainActivity extends Activity {
         super.onResume();
         resumed = true;
         instance = this;
+        HomeKeyService.firstBootLaunch = false;  // Hume is showing — GTV shortcut now allowed
         String ws = Profiles.homePrefs(this).getString("wallpaper", "graphite");
         if (!ws.equals(wallStyle)) {
             wallStyle = ws;
@@ -2090,12 +2091,24 @@ public class MainActivity extends Activity {
      * MediaWatchService items (with real position data) come first; Watch Next items not already
      * represented by title are added next; Netflix fills in after that.
      */
-    List<Suggestions.Item> mergeWatchNext(List<Suggestions.Item> mediaItems) {
-        List<Suggestions.Item> out = new ArrayList<>(mediaItems);
-        Set<String> seenTitles = new HashSet<>();
-        for (Suggestions.Item it : out) seenTitles.add(it.title.toLowerCase());
+    /** Items with progress >= this are considered finished and hidden from Continue Watching. */
+    static final float CW_DONE_THRESHOLD = 0.70f;
 
-        // Watch Next from system TV provider (YouTube, Prime, etc.)
+    List<Suggestions.Item> mergeWatchNext(List<Suggestions.Item> mediaItems) {
+        List<Suggestions.Item> out = new ArrayList<>();
+        Set<String> seenTitles = new HashSet<>();
+        int ytCount = 0;
+        for (Suggestions.Item it : mediaItems) {
+            // For YouTube (MediaWatchService): hide if >= 70% watched, and cap at 2 items.
+            if (it.pkg != null && it.pkg.startsWith("com.google.android.youtube")) {
+                if (it.progress >= 0 && it.progress >= CW_DONE_THRESHOLD) continue;
+                if (++ytCount > 2) continue;
+            }
+            seenTitles.add(it.title.toLowerCase());
+            out.add(it);
+        }
+
+        // Watch Next from system TV provider (Netflix, Prime, etc.)
         try {
             List<WatchNext.Item> wn = WatchNext.load(this, 10);
             for (WatchNext.Item w : wn) {
@@ -2199,7 +2212,8 @@ public class MainActivity extends Activity {
         heroScrim.setVisibility(View.GONE);
 
         heroInfo.animate().withLayer().alpha(a).setDuration(350).start();
-        heroDots.animate().alpha(a).setDuration(350).start();
+        // Dots only show in hero mode (shelf focused), not in dock mode — managed by heroFocused.
+        if (!show) heroDots.animate().alpha(0f).setDuration(350).start();
         chevron.animate().alpha(1f - a).setDuration(350).start();
         heroBack.animate().alpha(0f).setDuration(450).start();
         if (!show && natureCredit != null) natureCredit.animate().alpha(0f).setDuration(200).start();
@@ -2507,7 +2521,7 @@ public class MainActivity extends Activity {
             scroll.animate().withLayer().translationY(screenH - shelfH + dp(30)).setDuration(500).setInterpolator(EASE)
                     .setUpdateListener(null).withEndAction(this::invalidateGlass).start();
             heroInfo.animate().withLayer().translationY(0).setDuration(500).setInterpolator(EASE).start();
-            heroDots.animate().withLayer().translationY(0).setDuration(500).setInterpolator(EASE).start();
+            heroDots.animate().withLayer().alpha(1f).translationY(0).setDuration(500).setInterpolator(EASE).start();
             boolean nature = !heroItems.isEmpty() && "nature".equals(heroItems.get(heroIndex).type);
             heroOverview.setVisibility(nature ? View.GONE : View.VISIBLE);
             heroButton.setVisibility(heroIsNews() || nature ? View.GONE : View.VISIBLE);
@@ -2546,7 +2560,7 @@ public class MainActivity extends Activity {
                 scroll.animate().withLayer().translationY(0).setDuration(450).setInterpolator(EASE)
                         .setUpdateListener(null).withEndAction(this::invalidateGlass).start();
                 heroInfo.animate().withLayer().translationY(heroInfoRestY()).setDuration(450).setInterpolator(EASE).start();
-                heroDots.animate().withLayer().translationY(heroDotsRestY()).setDuration(450).setInterpolator(EASE).start();
+                heroDots.animate().withLayer().alpha(0f).translationY(heroDotsRestY()).setDuration(350).setInterpolator(EASE).start();
                 if (!heroIsNews()) {
                     heroOverview.animate().alpha(0f).setDuration(160).setStartDelay(0)
                             .withEndAction(() -> heroOverview.setVisibility(View.GONE)).start();
@@ -3237,7 +3251,8 @@ public class MainActivity extends Activity {
             heroInfo.animate().withLayer().translationY(heroInfoRestY()).setDuration(350).setInterpolator(EASE).start();
             heroDots.animate().withLayer().translationY(heroDotsRestY()).setDuration(350).setInterpolator(EASE).start();
         }
-        // goTop always lands on the dock, never the shelf — hide credit regardless.
+        // goTop always lands on the dock — hide dots and credit.
+        heroDots.animate().alpha(0f).setDuration(200).start();
         if (natureCredit != null) natureCredit.animate().alpha(0f).setDuration(200).start();
         scroll.smoothScrollTo(0, 0);
         focusIndex(0);

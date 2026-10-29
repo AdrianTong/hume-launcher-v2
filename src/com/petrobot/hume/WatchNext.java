@@ -23,20 +23,23 @@ final class WatchNext {
     static final class Item {
         final String title, subtitle, image, pkg;
         final Intent intent;
+        final float progress;  // 0..1, or -1 if unknown
 
-        Item(String title, String subtitle, String image, String pkg, Intent intent) {
+        Item(String title, String subtitle, String image, String pkg, Intent intent, float progress) {
             this.title = title;
             this.subtitle = subtitle;
             this.image = image;
             this.pkg = pkg;
             this.intent = intent;
+            this.progress = progress;
         }
     }
 
     private static final String TAG = "HumeWatchNext";
     private static final Set<String> EXCLUDED = new HashSet<>(java.util.Arrays.asList("com.spotify.tv.android"));
     private static final String[] COLS = {"package_name", "title", "episode_title", "poster_art_uri",
-            "thumbnail_uri", "intent_uri", "last_engagement_time_utc_millis", "browsable"};
+            "thumbnail_uri", "intent_uri", "last_engagement_time_utc_millis", "browsable",
+            "last_playback_position_millis", "duration_millis"};
 
     private WatchNext() { }
 
@@ -79,7 +82,7 @@ final class WatchNext {
                 Object[] r = new Object[COLS.length];
                 for (int i = 0; i < COLS.length; i++) {
                     if (ix[i] < 0) continue;
-                    r[i] = i == 6 || i == 7 ? (Object) cur.getLong(ix[i]) : cur.getString(ix[i]);
+                    r[i] = (i == 6 || i == 7 || i == 8 || i == 9) ? (Object) cur.getLong(ix[i]) : cur.getString(ix[i]);
                 }
                 rows.add(r);
             }
@@ -107,7 +110,10 @@ final class WatchNext {
                 continue;
             }
             String poster = r[3] != null ? (String) r[3] : (String) r[4];
-            out.add(new Item(title, r[2] != null ? (String) r[2] : "", poster, pkg, intent));
+            long pos = r[8] instanceof Long ? (Long) r[8] : -1;
+            long dur = r[9] instanceof Long ? (Long) r[9] : 0;
+            float prog = dur > 0 && pos >= 0 ? Math.min(1f, pos / (float) dur) : -1f;
+            out.add(new Item(title, r[2] != null ? (String) r[2] : "", poster, pkg, intent, prog));
         }
         return out;
     }
@@ -123,7 +129,7 @@ final class WatchNext {
         s.backdrop = wn.image != null ? wn.image : "";
         s.pkg = wn.pkg != null ? wn.pkg : "";
         s.key = s.pkg + "|" + s.title;
-        s.progress = -1f;
+        s.progress = wn.progress;
         s.link = wn.intent != null ? wn.intent.toUri(Intent.URI_INTENT_SCHEME) : "";
         return s;
     }
